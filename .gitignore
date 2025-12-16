@@ -1,0 +1,47 @@
+# Build outputs
+bin/
+obj/
+*.dll
+*.exe
+*.pdb
+
+# User-specific files
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Visual Studio Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+# MonoDevelop
+*.userprefs
+
+# Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Bb]in/
+[Oo]bj/
+
+# NuGet Packages
+*.nupkg
+packages/
+.nuget/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Sensitive data (keep secure!)
+# appsettings.json # Uncomment nếu muốn bảo mật config
+
+# Node modules (nếu dùng npm)
+node_modules/
