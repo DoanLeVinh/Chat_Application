@@ -5,4 +5,5 @@ namespace ChatServer.Services
     {
         // Example: Register(), Login(), GetUser(), UpdateUser(), etc.
     }
+    //test
 }
