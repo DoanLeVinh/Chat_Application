@@ -46,6 +46,7 @@ cd Server
 dotnet restore
 dotnet run
 ```
+Get-Service MongoDB
 
 ### Chạy Client
 
