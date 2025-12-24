@@ -98,12 +98,21 @@ namespace ChatServer.WebSockets
                     }
                 }
 
-                if (webSocket.State != WebSocketState.Closed)
+
+                // Đóng WebSocket nếu chưa đóng
+                if (webSocket.State == WebSocketState.Open || webSocket.State == WebSocketState.CloseReceived)
                 {
-                    await webSocket.CloseAsync(
-                        WebSocketCloseStatus.NormalClosure,
-                        "Connection closed",
-                        CancellationToken.None);
+                    try
+                    {
+                        await webSocket.CloseAsync(
+                            WebSocketCloseStatus.NormalClosure,
+                            "Connection closed",
+                            CancellationToken.None);
+                    }
+                    catch (WebSocketException)
+                    {
+                        // WebSocket đã bị đóng bởi client, ignore exception
+                    }
                 }
 
                 Console.WriteLine($"[WebSocket] Connection {connectionId} closed for user {userId}");
