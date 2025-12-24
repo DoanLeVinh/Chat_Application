@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Test Client</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        .content {
+            padding: 20px;
+        }
+        .section {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        .section h3 {
+            margin-bottom: 10px;
+            color: #333;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 10px;
+            margin: 5px 0;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            margin: 5px;
+            transition: transform 0.2s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+        }
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 6px;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        .status.connected {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status.disconnected {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        #messages {
+            height: 300px;
+            overflow-y: auto;
+            padding: 10px;
+            background: white;
+            border: 2px solid #ddd;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+        .message {
+            margin: 5px 0;
+            padding: 8px;
+            border-radius: 4px;
+        }
+        .message.sent {
+            background: #e3f2fd;
+            border-left: 4px solid #2196F3;
+        }
+        .message.received {
+            background: #f1f8e9;
+            border-left: 4px solid #8bc34a;
+        }
+        .message.system {
+            background: #fff3e0;
+            border-left: 4px solid #ff9800;
+        }
+        .message.error {
+            background: #ffebee;
+            border-left: 4px solid #f44336;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔌 WebSocket Test Client</h1>
+            <p>Test kết nối WebSocket với JWT Authentication</p>
+        </div>
+        <div class="content">
+            <!-- Auth Section -->
+            <div class="section">
+                <h3>🔐 Bước 1: Đăng nhập để lấy JWT Token</h3>
+                <input type="email" id="email" placeholder="Email" value="test@example.com">
+                <input type="password" id="password" placeholder="Password" value="Test123456">
+                <button onclick="login()">Đăng nhập</button>
+                <div id="loginStatus"></div>
+            </div>
+
+            <!-- WebSocket Section -->
+            <div class="section">
+                <h3>🌐 Bước 2: Kết nối WebSocket</h3>
+                <input type="text" id="wsUrl" placeholder="WebSocket URL" value="ws://localhost:5000/ws">
+                <button id="connectBtn" onclick="connectWebSocket()" disabled>Kết nối WebSocket</button>
+                <button id="disconnectBtn" onclick="disconnectWebSocket()" disabled>Ngắt kết nối</button>
+                <div id="wsStatus" class="status disconnected">Chưa kết nối</div>
+            </div>
+
+            <!-- Message Section -->
+            <div class="section">
+                <h3>💬 Bước 3: Gửi tin nhắn</h3>
+                <textarea id="messageInput" placeholder="Nhập tin nhắn JSON..." rows="3">{"type": "test", "payload": {"message": "Hello WebSocket!"}}</textarea>
+                <button id="sendBtn" onclick="sendMessage()" disabled>Gửi tin nhắn</button>
+            </div>
+
+            <!-- Messages Log -->
+            <div class="section">
+                <h3>📝 Log tin nhắn</h3>
+                <div id="messages"></div>
+                <button onclick="clearMessages()">Xóa log</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let token = null;
+
+        async function login() {
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const loginStatus = document.getElementById('loginStatus');
+
+            try {
+                loginStatus.innerHTML = '<div class="message system">Đang đăng nhập...</div>';
+                
+                const response = await fetch('http://localhost:5000/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    token = data.token;
+                    loginStatus.innerHTML = `
+                        <div class="message received">
+                            ✅ Đăng nhập thành công!<br>
+                            User: ${data.user.displayName} (${data.user.email})<br>
+                            Token: ${token.substring(0, 50)}...
+                        </div>
+                    `;
+                    document.getElementById('connectBtn').disabled = false;
+                } else {
+                    loginStatus.innerHTML = `<div class="message error">❌ ${data.message}</div>`;
+                }
+            } catch (error) {
+                loginStatus.innerHTML = `<div class="message error">❌ Lỗi: ${error.message}</div>`;
+            }
+        }
+
+        function connectWebSocket() {
+            if (!token) {
+                addMessage('❌ Vui lòng đăng nhập trước!', 'error');
+                return;
+            }
+
+            const wsUrl = document.getElementById('wsUrl').value;
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                addMessage('🔌 WebSocket connected!', 'system');
+                document.getElementById('wsStatus').className = 'status connected';
+                document.getElementById('wsStatus').textContent = '✅ Đã kết nối';
+                
+                // Gửi JWT token để xác thực
+                ws.send(token);
+                addMessage(`📤 Sent JWT token for authentication`, 'sent');
+                
+                document.getElementById('connectBtn').disabled = true;
+                document.getElementById('disconnectBtn').disabled = false;
+                document.getElementById('sendBtn').disabled = false;
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                addMessage(`📥 Received: ${JSON.stringify(data, null, 2)}`, 'received');
+            };
+
+            ws.onerror = (error) => {
+                addMessage(`❌ WebSocket error!`, 'error');
+                console.error('WebSocket error:', error);
+            };
+
+            ws.onclose = () => {
+                addMessage('🔌 WebSocket disconnected!', 'system');
+                document.getElementById('wsStatus').className = 'status disconnected';
+                document.getElementById('wsStatus').textContent = '❌ Đã ngắt kết nối';
+                
+                document.getElementById('connectBtn').disabled = false;
+                document.getElementById('disconnectBtn').disabled = true;
+                document.getElementById('sendBtn').disabled = true;
+            };
+        }
+
+        function disconnectWebSocket() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+        }
+
+        function sendMessage() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                addMessage('❌ WebSocket chưa kết nối!', 'error');
+                return;
+            }
+
+            const message = document.getElementById('messageInput').value;
+            try {
+                // Kiểm tra JSON hợp lệ
+                JSON.parse(message);
+                ws.send(message);
+                addMessage(`📤 Sent: ${message}`, 'sent');
+            } catch (error) {
+                addMessage(`❌ JSON không hợp lệ: ${error.message}`, 'error');
+            }
+        }
+
+        function addMessage(message, type) {
+            const messagesDiv = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function clearMessages() {
+            document.getElementById('messages').innerHTML = '';
+        }
+    </script>
+</body>
+</html>

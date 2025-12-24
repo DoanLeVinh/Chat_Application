@@ -1,6 +1,8 @@
 using System.Text;
 using ChatServer.Database;
 using ChatServer.Services;
+using ChatServer.WebSockets;
+using ChatServer.WebSockets.Handlers;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 
@@ -27,6 +29,16 @@ builder.Services.AddSingleton(jwtSettings);
 builder.Services.AddSingleton<MongoDBContext>();
 builder.Services.AddScoped<UserRepository>();
 builder.Services.AddScoped<AuthService>();
+
+// WebSocket services
+builder.Services.AddSingleton<ConnectionManager>();
+builder.Services.AddSingleton<MessageRouter>();
+builder.Services.AddScoped(sp => new WebSocketHandler(
+    sp.GetRequiredService<ConnectionManager>(),
+    sp.GetRequiredService<UserRepository>(),
+    sp.GetRequiredService<MessageRouter>(),
+    jwtSettings.SecretKey
+));
 
 // Cấu hình JWT Authentication
 builder.Services.AddAuthentication(options =>
@@ -65,6 +77,13 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// Cấu hình WebSocket
+var webSocketOptions = new WebSocketOptions
+{
+    KeepAliveInterval = TimeSpan.FromMinutes(2)
+};
+app.UseWebSockets(webSocketOptions);
+
 // Configure the HTTP request pipeline
 app.UseSwagger();
 app.UseSwaggerUI();
@@ -72,6 +91,20 @@ app.UseSwaggerUI();
 app.UseCors();
 app.UseAuthentication();
 app.UseAuthorization();
+
+// WebSocket endpoint
+app.Map("/ws", async (HttpContext context, WebSocketHandler handler) =>
+{
+    if (context.WebSockets.IsWebSocketRequest)
+    {
+        var webSocket = await context.WebSockets.AcceptWebSocketAsync();
+        await handler.HandleWebSocketAsync(context, webSocket);
+    }
+    else
+    {
+        context.Response.StatusCode = 400;
+    }
+});
 
 app.MapControllers();
 
