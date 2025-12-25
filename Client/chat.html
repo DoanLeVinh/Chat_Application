@@ -9,10 +9,155 @@
 </head>
 <body>
     <div class="chat-container">
-        <!-- TODO: Add chat interface -->
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <div class="user-profile">
+                    <img src="assets/images/default-avatar.svg" alt="Avatar" class="avatar" id="userAvatar">
+                    <div class="user-info">
+                        <span class="user-name" id="userName">Loading...</span>
+                        <span class="user-status" id="userStatus">Online</span>
+                    </div>
+                </div>
+                <button class="btn-icon" id="btnLogout" title="Đăng xuất">
+                    <span>🚪</span>
+                </button>
+            </div>
+
+            <!-- Tabs -->
+            <div class="sidebar-tabs">
+                <button class="tab-btn active" data-tab="chats">💬 Chat</button>
+                <button class="tab-btn" data-tab="groups">👥 Nhóm</button>
+            </div>
+
+            <!-- Search (TODO: Người 4) -->
+            <div class="search-box">
+                <input type="text" placeholder="🔍 Tìm kiếm..." id="searchInput" disabled>
+                <small>Tìm kiếm - TODO: Người 4</small>
+            </div>
+
+            <!-- Action buttons -->
+            <div class="sidebar-actions">
+                <button class="btn-action" id="btnCreateGroup">➕ Tạo nhóm</button>
+            </div>
+
+            <!-- Conversation list -->
+            <div class="conversation-list" id="conversationList">
+                <p class="empty-state">Chưa có cuộc trò chuyện nào</p>
+            </div>
+        </div>
+
+        <!-- Main chat area -->
+        <div class="main-chat">
+            <div class="empty-chat" id="emptyChat">
+                <h2>💬 Chọn một cuộc trò chuyện</h2>
+                <p>Hoặc tạo nhóm mới để bắt đầu chat</p>
+            </div>
+
+            <div class="active-chat" id="activeChat" style="display: none;">
+                <!-- Chat header -->
+                <div class="chat-header">
+                    <div class="chat-info">
+                        <img src="assets/images/default-avatar.svg" alt="Avatar" class="avatar" id="chatAvatar">
+                        <div>
+                            <h3 id="chatTitle">Chat title</h3>
+                            <span class="chat-members" id="chatMembers">2 thành viên</span>
+                        </div>
+                    </div>
+                    <div class="chat-actions">
+                        <button class="btn-icon" id="btnPinned" title="Tin nhắn đã ghim" disabled>
+                            📌 <small>(Người 4)</small>
+                        </button>
+                        <button class="btn-icon" id="btnChatInfo" title="Thông tin">ℹ️</button>
+                    </div>
+                </div>
+
+                <!-- Pinned messages (TODO: Người 4) -->
+                <div class="pinned-messages" id="pinnedMessages" style="display: none;">
+                    <p>📌 Ghim tin nhắn - TODO: Người 4</p>
+                </div>
+
+                <!-- Messages area -->
+                <div class="messages-area" id="messagesArea">
+                    <!-- Messages will be loaded here -->
+                </div>
+
+                <!-- Message input -->
+                <div class="message-input-area">
+                    <button class="btn-icon" id="btnSticker" title="Sticker" disabled>
+                        😊 <small>(Người 4)</small>
+                    </button>
+                    <input type="text" id="messageInput" placeholder="Nhập tin nhắn..." autocomplete="off">
+                    <button class="btn-send" id="btnSend">
+                        Gửi ➤
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right panel (Group info / Member list) -->
+        <div class="right-panel" id="rightPanel" style="display: none;">
+            <div class="panel-header">
+                <h3>Thông tin nhóm</h3>
+                <button class="btn-icon" id="btnClosePanel">✕</button>
+            </div>
+            <div class="panel-content">
+                <div class="group-info">
+                    <img src="assets/images/default-avatar.svg" alt="Group" class="group-avatar" id="groupAvatar">
+                    <h4 id="groupName">Tên nhóm</h4>
+                    <button class="btn-secondary" id="btnEditGroup">✏️ Chỉnh sửa</button>
+                </div>
+                <div class="members-section">
+                    <h4>Thành viên (<span id="memberCount">0</span>)</h4>
+                    <button class="btn-secondary" id="btnAddMember">➕ Thêm thành viên</button>
+                    <div class="members-list" id="membersList">
+                        <!-- Members will be loaded here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <!-- Create Group Modal -->
+    <div class="modal" id="createGroupModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Tạo nhóm mới</h3>
+                <button class="btn-close" id="closeGroupModal">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Tên nhóm</label>
+                    <input type="text" id="groupNameInput" placeholder="Nhập tên nhóm...">
+                </div>
+                <div class="form-group">
+                    <label>Thành viên</label>
+                    <div id="memberSelectList">
+                        <p class="info-text">Tìm kiếm người dùng - TODO: Người 4</p>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="cancelGroupModal">Hủy</button>
+                <button class="btn-primary" id="confirmCreateGroup">Tạo nhóm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Server down modal (TODO: Người 3) -->
+    <div class="modal" id="serverDownModal" style="display: none;">
+        <div class="modal-content">
+            <h3>⚠️ Server đang bảo trì</h3>
+            <p>Bạn muốn chờ server bật lại hay thoát?</p>
+            <div class="modal-footer">
+                <button class="btn-secondary">Thoát</button>
+                <button class="btn-primary">Chờ</button>
+            </div>
+        </div>
     </div>
     
-    <script src="js/socket.js"></script>
+    <script src="js/socket-real.js"></script>
     <script src="js/ui.js"></script>
     <script src="js/app.js"></script>
 </body>
