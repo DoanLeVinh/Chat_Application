@@ -6,6 +6,8 @@ using ChatServer.Database;
 using ChatServer.Services;
 using ChatServer.WebSockets;
 using System.Text.Json;
+using Microsoft.Extensions.Hosting;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -31,6 +33,10 @@ builder.Services.AddSingleton<MessageService>();
 builder.Services.AddSingleton<UserService>();
 builder.Services.AddSingleton<WsConnectionManager>();
 builder.Services.AddSingleton<SeedDataService>();
+// Đăng ký services của người thứ 3
+builder.Services.AddSingleton<PresenceResumeManager>();
+builder.Services.AddSingleton<PresenceService>();
+builder.Services.AddSingleton<ResumeService>();
 
 // Enable CORS for client
 builder.Services.AddCors(options =>
@@ -80,4 +86,34 @@ Console.WriteLine("🚀 Chat Server started on ws://localhost:5000/ws");
 Console.WriteLine("📦 MongoDB: " + mongoDatabaseName);
 Console.WriteLine("✅ Health check: http://localhost:5000/health");
 
+// Graceful shutdown handling
+var appLifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
+appLifetime.ApplicationStopping.Register(() =>
+{
+    Console.WriteLine("🛑 Server is shutting down gracefully...");
+    
+    var presenceManager = app.Services.GetRequiredService<PresenceResumeManager>();
+    
+    // Broadcast server going down message
+    _ = presenceManager.BroadcastServerGoingDownAsync(10);
+    
+    // Wait a bit for messages to be sent
+    Thread.Sleep(3000);
+    
+    Console.WriteLine("👋 Server shutdown complete");
+});
+
+// Handle Ctrl+C
+Console.CancelKeyPress += (sender, e) =>
+{
+    Console.WriteLine("\n🛑 Ctrl+C detected, initiating graceful shutdown...");
+    e.Cancel = true; // Prevent immediate termination
+    
+    var presenceManager = app.Services.GetRequiredService<PresenceResumeManager>();
+    _ = presenceManager.BroadcastServerGoingDownAsync(5);
+    
+    // Give time for broadcast
+    Thread.Sleep(3000);
+    Environment.Exit(0);
+};
 app.Run();
