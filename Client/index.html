@@ -3,49 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Đăng nhập - Chat Application</title>
-    <link rel="stylesheet" href="css/style.css">
+    <title>Chat App</title>
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div class="login-container">
-        <div class="login-box">
-            <h1>💬 Chat App</h1>
-            <form id="loginForm">
-                <div class="form-group">
-                    <label for="email">Email</label>
-                    <input type="email" id="email" placeholder="your@email.com" required>
-                </div>
-                <div class="form-group">
-                    <label for="password">Mật khẩu</label>
-                    <input type="password" id="password" placeholder="••••••••" required>
-                </div>
-                <button type="submit" class="btn-primary">Đăng nhập</button>
-                <p class="toggle-form">
-                    Chưa có tài khoản? <a href="#" id="showRegister">Đăng ký</a>
-                </p>
-            </form>
-
-            <form id="registerForm" style="display: none;">
-                <div class="form-group">
-                    <label for="regDisplayName">Tên hiển thị</label>
-                    <input type="text" id="regDisplayName" placeholder="Nguyễn Văn A" required>
-                </div>
-                <div class="form-group">
-                    <label for="regEmail">Email</label>
-                    <input type="email" id="regEmail" placeholder="your@email.com" required>
-                </div>
-                <div class="form-group">
-                    <label for="regPassword">Mật khẩu</label>
-                    <input type="password" id="regPassword" placeholder="••••••••" required>
-                </div>
-                <button type="submit" class="btn-primary">Đăng ký</button>
-                <p class="toggle-form">
-                    Đã có tài khoản? <a href="#" id="showLogin">Đăng nhập</a>
-                </p>
-            </form>
-        </div>
-    </div>
-    
-    <script src="js/app.js"></script>
+    <script>
+        // Kiểm tra đã đăng nhập chưa
+        const token = localStorage.getItem('token');
+        if (token) {
+            window.location.href = 'chat.html';
+        } else {
+            window.location.href = 'auth.html';
+        }
+    </script>
 </body>
 </html>

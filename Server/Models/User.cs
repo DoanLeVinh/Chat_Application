@@ -3,9 +3,6 @@ using MongoDB.Bson.Serialization.Attributes;
 
 namespace ChatServer.Models
 {
-    /// <summary>
-    /// User/Profile model (Người 1 sẽ làm Auth, Người 2 chỉ dùng)
-    /// </summary>
     public class User
     {
         [BsonId]
@@ -19,7 +16,7 @@ namespace ChatServer.Models
         public string Email { get; set; } = string.Empty;
 
         [BsonElement("passwordHash")]
-        public string PasswordHash { get; set; } = string.Empty; // TODO: Người 1 - Auth
+        public string PasswordHash { get; set; } = string.Empty;
 
         [BsonElement("avatarUrl")]
         public string? AvatarUrl { get; set; }
@@ -27,6 +24,10 @@ namespace ChatServer.Models
         [BsonElement("createdAt")]
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
-        // TODO: Người 3 - Presence (isOnline, lastSeenAt) sẽ ở bảng riêng
+        [BsonElement("isOnline")]
+        public bool IsOnline { get; set; } = false;
+
+        [BsonElement("lastSeenAt")]
+        public DateTime? LastSeenAt { get; set; }
     }
 }

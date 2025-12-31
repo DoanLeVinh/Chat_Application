@@ -1,89 +1,149 @@
-// ===== LOGIN/REGISTER HANDLING (Placeholder - Người 1 sẽ implement Auth) =====
+// ===== LOGIN/REGISTER HANDLING (Auth API) =====
+const API_URL = 'http://localhost:5000/api/auth';
+
 document.addEventListener('DOMContentLoaded', () => {
     if (window.location.pathname.includes('index.html') || window.location.pathname === '/') {
         initLoginPage();
+    } else if (window.location.pathname.includes('auth.html')) {
+        initAuthPage();
     } else if (window.location.pathname.includes('chat.html')) {
         initChatPage();
     }
 });
 
-function initLoginPage() {
+function initAuthPage() {
+    const tabs = document.querySelectorAll('.tab');
     const loginForm = document.getElementById('loginForm');
     const registerForm = document.getElementById('registerForm');
-    const showRegister = document.getElementById('showRegister');
-    const showLogin = document.getElementById('showLogin');
+    const messageEl = document.getElementById('message');
 
-    // Toggle between login and register
-    showRegister?.addEventListener('click', (e) => {
-        e.preventDefault();
-        loginForm.style.display = 'none';
-        registerForm.style.display = 'block';
+    // Tab switching
+    tabs?.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const tabName = tab.dataset.tab;
+            tabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            
+            if (tabName === 'login') {
+                loginForm.classList.add('active');
+                registerForm.classList.remove('active');
+            } else {
+                registerForm.classList.add('active');
+                loginForm.classList.remove('active');
+            }
+            hideMessage();
+        });
     });
 
-    showLogin?.addEventListener('click', (e) => {
-        e.preventDefault();
-        registerForm.style.display = 'none';
-        loginForm.style.display = 'block';
-    });
-
-    // Login submit (TODO: Người 1 - Auth)
+    // Login submit
     loginForm?.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const email = document.getElementById('email').value;
-        const password = document.getElementById('password').value;
+        const email = document.getElementById('loginEmail').value.trim();
+        const password = document.getElementById('loginPassword').value;
 
-        // TODO: Người 1 - Call auth API để verify password
-        console.log('Login:', email);
-        
-        // Lấy userId từ email (demo users đã được seed)
-        // Map email sang ObjectId từ seed data
-        const userIdMap = {
-            'vinh@demo.com': '694a3fb3291ebb4beb88f145',
-            'quang@demo.com': '694a3fb3291ebb4beb88f146',
-            'huyen@demo.com': '694a3fb3291ebb4beb88f147',
-            'suong@demo.com': '694a3fb3291ebb4beb88f148'
-        };
-
-        // Validate: Chỉ cho phép demo users
-        if (!userIdMap[email]) {
-            alert('❌ Email không tồn tại!\n\nDemo users:\n- vinh@demo.com\n- quang@demo.com\n- huyen@demo.com\n- suong@demo.com');
+        if (!email || !password) {
+            showAuthMessage('Vui lòng điền đầy đủ thông tin.', 'error');
             return;
         }
 
-        // Temporary: Dùng ObjectId làm userId (sau khi Người 1 làm Auth thật)
-        const userId = userIdMap[email];
-        localStorage.setItem('userId', userId);
-        localStorage.setItem('userEmail', email);
-        localStorage.setItem('userName', email.split('@')[0]);
-        window.location.href = 'chat.html';
+        try {
+            const response = await fetch(`${API_URL}/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                localStorage.setItem('token', data.token);
+                localStorage.setItem('user', JSON.stringify(data.user));
+                localStorage.setItem('userId', data.user.id);
+                localStorage.setItem('userName', data.user.displayName);
+                showAuthMessage('Đăng nhập thành công!', 'success');
+                setTimeout(() => window.location.href = 'chat.html', 1000);
+            } else {
+                showAuthMessage(data.message || 'Đăng nhập thất bại.', 'error');
+            }
+        } catch (error) {
+            showAuthMessage('Không thể kết nối đến server.', 'error');
+            console.error('Login error:', error);
+        }
     });
 
-    // Register submit (TODO: Người 1 - Auth)
+    // Register submit
     registerForm?.addEventListener('submit', async (e) => {
         e.preventDefault();
-        const displayName = document.getElementById('regDisplayName').value;
-        const email = document.getElementById('regEmail').value;
-        const password = document.getElementById('regPassword').value;
+        const displayName = document.getElementById('registerName').value.trim();
+        const email = document.getElementById('registerEmail').value.trim();
+        const password = document.getElementById('registerPassword').value;
+        const confirmPassword = document.getElementById('confirmPassword').value;
 
-        // TODO: Người 1 - Call auth API
-        console.log('Register:', displayName, email);
-        
-        // Temporary: Mock register
-        alert('Đăng ký thành công! Vui lòng đăng nhập.');
-        registerForm.style.display = 'none';
-        loginForm.style.display = 'block';
+        if (!displayName || !email || !password) {
+            showAuthMessage('Vui lòng điền đầy đủ thông tin.', 'error');
+            return;
+        }
+
+        if (password !== confirmPassword) {
+            showAuthMessage('Mật khẩu xác nhận không khớp.', 'error');
+            return;
+        }
+
+        try {
+            const response = await fetch(`${API_URL}/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ displayName, email, password })
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                showAuthMessage('Đăng ký thành công! Đang chuyển...', 'success');
+                setTimeout(() => {
+                    tabs[0]?.click();
+                    document.getElementById('loginEmail').value = email;
+                }, 1500);
+            } else {
+                showAuthMessage(data.message || 'Đăng ký thất bại.', 'error');
+            }
+        } catch (error) {
+            showAuthMessage('Không thể kết nối đến server.', 'error');
+            console.error('Register error:', error);
+        }
     });
+
+    function showAuthMessage(text, type) {
+        if (messageEl) {
+            messageEl.textContent = text;
+            messageEl.className = 'message ' + type;
+        }
+    }
+
+    function hideMessage() {
+        if (messageEl) {
+            messageEl.className = 'message';
+            messageEl.textContent = '';
+        }
+    }
 }
+
+function initLoginPage() {
+    // Redirect to auth page
+    window.location.href = 'auth.html';
+}
+
 
 // ===== CHAT PAGE INITIALIZATION =====
 let currentConversationId = null;
 let currentConversations = [];
 
 async function initChatPage() {
-    // Check auth
+    // Check auth - dùng token thay vì userId
+    const token = localStorage.getItem('token');
     const userId = localStorage.getItem('userId');
-    if (!userId) {
-        window.location.href = 'index.html';
+    if (!token || !userId) {
+        window.location.href = 'auth.html';
         return;
     }
 
