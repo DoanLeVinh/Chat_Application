@@ -2,23 +2,25 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Configuration;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
 using ChatServer.Database;
 using ChatServer.Services;
 using ChatServer.WebSockets;
+using System.Text;
 using System.Text.Json;
-using Microsoft.Extensions.Hosting;
-
+using ChatServer.Server.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Configure JSON serializer để dùng camelCase (type, requestId, payload)
+// Configure JSON serializer để dùng camelCase
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
     options.SerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
     options.SerializerOptions.WriteIndented = false;
 });
 
-// Load configuration từ current directory
+// Load configuration
 var configPath = Path.Combine(Directory.GetCurrentDirectory(), "..", "Config", "appsettings.json");
 builder.Configuration.AddJsonFile(configPath, optional: false, reloadOnChange: true);
 
@@ -26,6 +28,13 @@ builder.Configuration.AddJsonFile(configPath, optional: false, reloadOnChange: t
 var mongoConnectionString = builder.Configuration["MongoDB:ConnectionString"] ?? "";
 var mongoDatabaseName = builder.Configuration["MongoDB:DatabaseName"] ?? "ChatAppDB";
 builder.Services.AddSingleton(new MongoDBContext(mongoConnectionString, mongoDatabaseName));
+builder.Services.AddSingleton<ConnectionManager>();
+
+// JWT Settings
+var jwtSecretKey = builder.Configuration["JwtSettings:SecretKey"] ?? "YourSuperSecretKey32CharactersLong!";
+var jwtIssuer = builder.Configuration["JwtSettings:Issuer"] ?? "ChatServer";
+var jwtAudience = builder.Configuration["JwtSettings:Audience"] ?? "ChatClient";
+var jwtExpiryMinutes = int.Parse(builder.Configuration["JwtSettings:ExpiryInMinutes"] ?? "1440");
 
 // Register services
 builder.Services.AddSingleton<ConversationService>();
@@ -33,10 +42,35 @@ builder.Services.AddSingleton<MessageService>();
 builder.Services.AddSingleton<UserService>();
 builder.Services.AddSingleton<WsConnectionManager>();
 builder.Services.AddSingleton<SeedDataService>();
-// Đăng ký services của người thứ 3
-builder.Services.AddSingleton<PresenceResumeManager>();
-builder.Services.AddSingleton<PresenceService>();
-builder.Services.AddSingleton<ResumeService>();
+builder.Services.AddSingleton(sp => new AuthService(
+    sp.GetRequiredService<MongoDBContext>(),
+    jwtSecretKey,
+    jwtIssuer,
+    jwtAudience,
+    jwtExpiryMinutes
+));
+
+// Configure JWT Authentication
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = jwtIssuer,
+        ValidAudience = jwtAudience,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.ASCII.GetBytes(jwtSecretKey))
+    };
+});
+
+builder.Services.AddControllers();
 
 // Enable CORS for client
 builder.Services.AddCors(options =>
@@ -56,6 +90,8 @@ var seedService = app.Services.GetRequiredService<SeedDataService>();
 await seedService.SeedAsync();
 
 app.UseCors();
+app.UseAuthentication();
+app.UseAuthorization();
 
 // Enable WebSocket
 app.UseWebSockets();
@@ -79,41 +115,23 @@ app.Map("/ws", async context =>
     }
 });
 
+// Map Controllers
+app.MapControllers();
+
 // Health check
 app.MapGet("/health", () => new { status = "ok", timestamp = DateTime.UtcNow });
 
 Console.WriteLine("🚀 Chat Server started on ws://localhost:5000/ws");
 Console.WriteLine("📦 MongoDB: " + mongoDatabaseName);
+Console.WriteLine("🔐 Auth API: http://localhost:5000/api/auth");
 Console.WriteLine("✅ Health check: http://localhost:5000/health");
 
-// Graceful shutdown handling
-var appLifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
-appLifetime.ApplicationStopping.Register(() =>
-{
-    Console.WriteLine("🛑 Server is shutting down gracefully...");
-    
-    var presenceManager = app.Services.GetRequiredService<PresenceResumeManager>();
-    
-    // Broadcast server going down message
-    _ = presenceManager.BroadcastServerGoingDownAsync(10);
-    
-    // Wait a bit for messages to be sent
-    Thread.Sleep(3000);
-    
-    Console.WriteLine("👋 Server shutdown complete");
-});
+// Lấy ConnectionManager từ DI
+var connectionManager = app.Services.GetRequiredService<ConnectionManager>();
 
-// Handle Ctrl+C
-Console.CancelKeyPress += (sender, e) =>
-{
-    Console.WriteLine("\n🛑 Ctrl+C detected, initiating graceful shutdown...");
-    e.Cancel = true; // Prevent immediate termination
-    
-    var presenceManager = app.Services.GetRequiredService<PresenceResumeManager>();
-    _ = presenceManager.BroadcastServerGoingDownAsync(5);
-    
-    // Give time for broadcast
-    Thread.Sleep(3000);
-    Environment.Exit(0);
-};
+// Test: In ra số lượng services đã đăng ký
+Console.WriteLine("[Startup] Services registered:");
+Console.WriteLine($"- ConnectionManager: Registered");
+// Sẽ thêm PresenceService, ResumeService sau
+
 app.Run();
