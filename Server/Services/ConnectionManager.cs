@@ -2,336 +2,182 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
-using System.Net.Sockets;
-using System.Text;
-using System.Text.Json;
-using System.Threading.Tasks;
-using ChatServer.Models.Presence;
+using ChatServer.Server.Models;
 
-namespace ChatServer.Services
+namespace ChatServer.Server.Services
 {
     public class ConnectionManager
     {
-        // Lưu trữ các kết nối
-        private readonly ConcurrentDictionary<string, TcpClient> _connections;
-        private readonly ConcurrentDictionary<string, string> _connectionToUser;
-        private readonly ConcurrentDictionary<string, List<string>> _userToConnections;
-        private readonly ConcurrentDictionary<string, List<string>> _conversationConnections;
+        // ConcurrentDictionary để thread-safe
+        private readonly ConcurrentDictionary<string, ConnectionState> _connections 
+            = new ConcurrentDictionary<string, ConnectionState>();
         
-        private readonly PresenceService _presenceService;
-        private readonly ResumeService _resumeService;
+        private readonly ConcurrentDictionary<string, List<string>> _userConnections 
+            = new ConcurrentDictionary<string, List<string>>();
+            
+        private readonly object _cleanupLock = new object();
+        private DateTime _lastCleanup = DateTime.UtcNow;
         
-        public ConnectionManager(PresenceService presenceService, ResumeService resumeService)
+        // 1. Thêm connection mới
+        public void AddConnection(string connectionId, string userId)
         {
-            _presenceService = presenceService;
-            _resumeService = resumeService;
+            Console.WriteLine($"[ConnectionManager] Adding connection: {connectionId} for user: {userId}");
             
-            _connections = new ConcurrentDictionary<string, TcpClient>();
-            _connectionToUser = new ConcurrentDictionary<string, string>();
-            _userToConnections = new ConcurrentDictionary<string, List<string>>();
-            _conversationConnections = new ConcurrentDictionary<string, List<string>>();
+            var state = new ConnectionState
+            {
+                ConnectionId = connectionId,
+                UserId = userId,
+                LastHeartbeat = DateTime.UtcNow
+            };
             
-            Console.WriteLine("✅ ConnectionManager initialized");
-        }
-        
-        public void AddConnection(string connectionId, TcpClient client, string userId)
-        {
-            _connections[connectionId] = client;
-            _connectionToUser[connectionId] = userId;
+            // Thêm vào dictionary connections
+            _connections[connectionId] = state;
             
-            _userToConnections.AddOrUpdate(userId,
+            // Thêm vào userConnections (1 user có thể nhiều connection)
+            _userConnections.AddOrUpdate(
+                userId,
                 new List<string> { connectionId },
-                (key, existing) =>
+                (key, existingList) =>
                 {
-                    if (!existing.Contains(connectionId))
-                        existing.Add(connectionId);
-                    return existing;
-                });
+                    if (!existingList.Contains(connectionId))
+                    {
+                        existingList.Add(connectionId);
+                    }
+                    return existingList;
+                }
+            );
             
-            Console.WriteLine($"✅ Connection added: {connectionId} for user {userId}");
+            Console.WriteLine($"[ConnectionManager] Total connections: {_connections.Count}, Users online: {_userConnections.Count}");
         }
         
+        // 2. Xóa connection
         public void RemoveConnection(string connectionId)
         {
-            if (_connections.TryRemove(connectionId, out var client))
-            {
-                client.Close();
-                
-                if (_connectionToUser.TryRemove(connectionId, out var userId))
-                {
-                    // Xóa khỏi user's connections
-                    if (_userToConnections.TryGetValue(userId, out var connections))
-                    {
-                        connections.Remove(connectionId);
-                        if (!connections.Any())
-                        {
-                            _userToConnections.TryRemove(userId, out _);
-                        }
-                    }
-                    
-                    // Xóa khỏi tất cả conversations
-                    foreach (var convId in _conversationConnections.Keys)
-                    {
-                        if (_conversationConnections.TryGetValue(convId, out var convConnections))
-                        {
-                            convConnections.Remove(connectionId);
-                        }
-                    }
-                    
-                    // Update presence
-                    _ = _presenceService.UserDisconnectedAsync(connectionId);
-                }
-                
-                Console.WriteLine($"✅ Connection removed: {connectionId}");
-            }
-        }
-        
-        public bool IsConnectionActive(string connectionId)
-        {
-            return _connections.ContainsKey(connectionId);
-        }
-        
-        public void AddToConversation(string conversationId, string connectionId)
-        {
-            _conversationConnections.AddOrUpdate(conversationId,
-                new List<string> { connectionId },
-                (key, existing) =>
-                {
-                    if (!existing.Contains(connectionId))
-                    {
-                        existing.Add(connectionId);
-                    }
-                    return existing;
-                });
+            Console.WriteLine($"[ConnectionManager] Removing connection: {connectionId}");
             
-            Console.WriteLine($"✅ Added connection {connectionId} to conversation {conversationId}");
-        }
-        
-        public async Task BroadcastToConversationAsync(string conversationId, object message, string excludeUserId = null)
-        {
-            if (_conversationConnections.TryGetValue(conversationId, out var connectionIds))
+            if (_connections.TryRemove(connectionId, out var state))
             {
-                var jsonMessage = JsonSerializer.Serialize(message);
-                var data = Encoding.UTF8.GetBytes(jsonMessage + "\n");
-                
-                foreach (var connectionId in connectionIds)
+                // Xóa khỏi userConnections
+                if (_userConnections.TryGetValue(state.UserId, out var connections))
                 {
-                    if (_connectionToUser.TryGetValue(connectionId, out var userId) &&
-                        userId != excludeUserId &&
-                        _connections.TryGetValue(connectionId, out var client))
+                    connections.Remove(connectionId);
+                    
+                    // Nếu user không còn connection nào
+                    if (connections.Count == 0)
                     {
-                        try
-                        {
-                            var stream = client.GetStream();
-                            await stream.WriteAsync(data, 0, data.Length);
-                            await stream.FlushAsync();
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"❌ Error broadcasting to {connectionId}: {ex.Message}");
-                            RemoveConnection(connectionId);
-                        }
+                        _userConnections.TryRemove(state.UserId, out _);
                     }
                 }
             }
         }
         
-        public async Task SendToConnectionAsync(string connectionId, object message)
+        // 3. Cập nhật heartbeat
+        public bool UpdateHeartbeat(string connectionId)
         {
-            if (_connections.TryGetValue(connectionId, out var client))
+            if (_connections.TryGetValue(connectionId, out var state))
             {
-                try
-                {
-                    var jsonMessage = JsonSerializer.Serialize(message);
-                    var data = Encoding.UTF8.GetBytes(jsonMessage + "\n");
-                    
-                    var stream = client.GetStream();
-                    await stream.WriteAsync(data, 0, data.Length);
-                    await stream.FlushAsync();
-                    
-                    Console.WriteLine($"✅ Sent message to connection {connectionId}");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"❌ Error sending to {connectionId}: {ex.Message}");
-                    RemoveConnection(connectionId);
-                }
+                state.LastHeartbeat = DateTime.UtcNow;
+                return true;
             }
+            return false;
         }
         
-        public async Task<ResumeResponse> HandleReconnectAsync(
-            string connectionId,
-            string userId,
-            string resumeToken,
-            Dictionary<string, long> sinceSeqByConversation)
-        {
-            try
-            {
-                Console.WriteLine($"🔄 Handling reconnect for user {userId}");
-                
-                // Validate resume token
-                var isValid = await _presenceService.ValidateResumeToken(userId, resumeToken);
-                if (!isValid)
-                {
-                    Console.WriteLine($"❌ Invalid resume token for user {userId}");
-                    return new ResumeResponse
-                    {
-                        Success = false,
-                        Error = "INVALID_RESUME_TOKEN"
-                    };
-                }
-                
-                // Lấy missed messages
-                var missedMessages = await _resumeService.GetMissedMessagesAsync(userId, sinceSeqByConversation);
-                
-                // Gửi missed messages
-                foreach (var message in missedMessages)
-                {
-                    var msg = new
-                    {
-                        type = "message_created",
-                        data = message
-                    };
-                    await SendToConnectionAsync(connectionId, msg);
-                }
-                
-                // Gửi snapshot nếu có
-                if (missedMessages.Any())
-                {
-                    var snapshot = await _resumeService.GetSnapshotAsync(missedMessages);
-                    if (snapshot.Any())
-                    {
-                        var snapshotMsg = new
-                        {
-                            type = "resume_snapshot",
-                            data = snapshot
-                        };
-                        await SendToConnectionAsync(connectionId, snapshotMsg);
-                    }
-                }
-                
-                // Update client state
-                if (missedMessages.Any())
-                {
-                    var lastSeqs = missedMessages
-                        .GroupBy(m => m.ConversationId)
-                        .ToDictionary(g => g.Key, g => g.Max(m => m.Sequence));
-                    
-                    await _resumeService.SaveClientStateAsync(userId, lastSeqs);
-                }
-                
-                Console.WriteLine($"✅ Resume successful for user {userId}, sent {missedMessages.Count} messages");
-                
-                return new ResumeResponse
-                {
-                    Success = true,
-                    Error = null,
-                    MessagesSent = missedMessages.Count
-                };
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"❌ Resume failed for user {userId}: {ex.Message}");
-                return new ResumeResponse
-                {
-                    Success = false,
-                    Error = "RESUME_FAILED"
-                };
-            }
-        }
-        
-        public async Task BroadcastServerGoingDownAsync(string reason, int reconnectAfter = 30)
-        {
-            var message = new
-            {
-                type = "server_going_down",
-                data = new
-                {
-                    reason,
-                    reconnectAfter,
-                    timestamp = DateTime.UtcNow,
-                    message = $"Server is shutting down. Please reconnect after {reconnectAfter} seconds."
-                }
-            };
-            
-            try
-            {
-                Console.WriteLine($"📢 Broadcasting server_going_down to {_connections.Count} connections");
-                
-                // Broadcast đến tất cả connections
-                foreach (var connectionId in _connections.Keys)
-                {
-                    await SendToConnectionAsync(connectionId, message);
-                }
-                
-                Console.WriteLine("✅ Broadcast completed");
-                
-                // Đợi 2 giây để clients nhận message
-                await Task.Delay(2000);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"❌ Error during server shutdown broadcast: {ex.Message}");
-            }
-        }
-        
-        public void CloseAllConnections(string reason = "Server shutdown")
-        {
-            var closeMessage = new
-            {
-                type = "connection_closed",
-                data = new
-                {
-                    reason,
-                    code = 1000, // Normal closure
-                    timestamp = DateTime.UtcNow
-                }
-            };
-            
-            Console.WriteLine($"🔒 Closing all connections ({_connections.Count} total): {reason}");
-            
-            foreach (var kvp in _connections)
-            {
-                try
-                {
-                    // Gửi close message
-                    var json = JsonSerializer.Serialize(closeMessage);
-                    var data = Encoding.UTF8.GetBytes(json + "\n");
-                    
-                    var stream = kvp.Value.GetStream();
-                    stream.Write(data, 0, data.Length);
-                    stream.Flush();
-                    
-                    // Đóng connection
-                    kvp.Value.Close();
-                    
-                    Console.WriteLine($"✅ Closed connection {kvp.Key}");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"❌ Error closing connection {kvp.Key}: {ex.Message}");
-                }
-            }
-            
-            // Clear all collections
-            _connections.Clear();
-            _connectionToUser.Clear();
-            _userToConnections.Clear();
-            _conversationConnections.Clear();
-            
-            Console.WriteLine("✅ All connections closed and cleaned up");
-        }
-        
-        public int GetConnectionCount()
-        {
-            return _connections.Count;
-        }
-    }
-    
-    public class ResumeResponse
+        // 4. Lấy connection state
+        public ConnectionState GetConnectionState(string connectionId)
+{
+    if (_connections.TryGetValue(connectionId, out var state))
     {
-        public bool Success { get; set; }
-        public string Error { get; set; }
-        public int MessagesSent { get; set; }
+        return state;
+    }
+    throw new KeyNotFoundException($"ConnectionId {connectionId} không tồn tại.");
+}
+        
+        // 5. Lấy tất cả connection của user
+        public List<string> GetUserConnections(string userId)
+        {
+            if (_userConnections.TryGetValue(userId, out var connections))
+            {
+                return new List<string>(connections); // Return copy
+            }
+            return new List<string>();
+        }
+        
+        // 6. Kiểm tra user có online không
+        public bool IsUserOnline(string userId)
+        {
+            return _userConnections.ContainsKey(userId) && 
+                   _userConnections[userId].Count > 0;
+        }
+        
+        // 7. Cập nhật last seen seq
+        public void UpdateLastSeenSeq(string connectionId, string conversationId, long seq)
+        {
+            if (_connections.TryGetValue(connectionId, out var state))
+            {
+                state.LastSeenSeq[conversationId] = seq;
+            }
+        }
+        
+        // 8. Lấy last seen seq
+        public long GetLastSeenSeq(string connectionId, string conversationId)
+        {
+            if (_connections.TryGetValue(connectionId, out var state))
+            {
+                if (state.LastSeenSeq.TryGetValue(conversationId, out var seq))
+                {
+                    return seq;
+                }
+            }
+            return 0;
+        }
+        
+        // 9. Lấy tất cả user đang online
+        public List<string> GetAllOnlineUsers()
+        {
+            return _userConnections.Keys.ToList();
+        }
+        
+        // 10. Dọn dẹp connection không hoạt động
+        public List<string> CleanupInactiveConnections(int timeoutSeconds = 30)
+        {
+            lock (_cleanupLock)
+            {
+                // Chỉ cleanup mỗi 30 giây
+                if ((DateTime.UtcNow - _lastCleanup).TotalSeconds < 30)
+                    return new List<string>();
+                    
+                _lastCleanup = DateTime.UtcNow;
+                
+                var cutoff = DateTime.UtcNow.AddSeconds(-timeoutSeconds);
+                var inactiveConnections = new List<string>();
+                
+                foreach (var kvp in _connections)
+                {
+                    if (kvp.Value.LastHeartbeat < cutoff)
+                    {
+                        inactiveConnections.Add(kvp.Key);
+                    }
+                }
+                
+                // Xóa tất cả inactive connections
+                foreach (var connId in inactiveConnections)
+                {
+                    RemoveConnection(connId);
+                }
+                
+                if (inactiveConnections.Count > 0)
+                {
+                    Console.WriteLine($"[ConnectionManager] Cleaned up {inactiveConnections.Count} inactive connections");
+                }
+                
+                return inactiveConnections;
+            }
+        }
+        
+        // 11. Get all connections (for debugging)
+        public Dictionary<string, ConnectionState> GetAllConnections()
+        {
+            return _connections.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+        }
     }
 }

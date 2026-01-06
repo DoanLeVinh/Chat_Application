@@ -1,44 +1,38 @@
+using MongoDB.Bson;
+using MongoDB.Bson.Serialization.Attributes;
 using System;
-using System.Collections.Generic;
 
-namespace ChatServer.Server.Models
+namespace Chat_Application.Server.Models
 {
-    public class ConnectionState
+    public class Presence
     {
-        public string ConnectionId { get; set; } = string.Empty; // Giá trị mặc định
+        [BsonId]
+        [BsonRepresentation(BsonType.ObjectId)]
+        public string Id { get; set; } = string.Empty; // Giá trị mặc định
+        
+        [BsonElement("userId")]
         public string UserId { get; set; } = string.Empty; // Giá trị mặc định
-        public DateTime ConnectedAt { get; set; }
-        public DateTime LastHeartbeat { get; set; }
         
-        public Dictionary<string, long> LastSeenSeq { get; set; } = new Dictionary<string, long>(); // Giá trị mặc định
+        [BsonElement("status")]
+        public string Status { get; set; } = "offline"; // Giá trị mặc định
         
-        public ConnectionState()
-        {
-            ConnectedAt = DateTime.UtcNow;
-            LastHeartbeat = DateTime.UtcNow;
-        }
+        [BsonElement("lastSeen")]
+        [BsonDateTimeOptions(Kind = DateTimeKind.Utc)]
+        public DateTime LastSeen { get; set; } = DateTime.UtcNow; // Giá trị mặc định
+        
+        [BsonElement("connectionId")]
+        public string ConnectionId { get; set; } = string.Empty; // Giá trị mặc định
+        
+        [BsonElement("updatedAt")]
+        [BsonDateTimeOptions(Kind = DateTimeKind.Utc)]
+        public DateTime UpdatedAt { get; set; } = DateTime.UtcNow; // Giá trị mặc định
     }
-
-    public class ResumeRequestData
+    
+    // Model cho presence update event
+    public class PresenceUpdateEvent
     {
-        public string RequestId { get; set; } = string.Empty; // Giá trị mặc định
-        public Dictionary<string, long> SinceSeqByConversation { get; set; } = new Dictionary<string, long>(); // Giá trị mặc định
-    }
-
-    public class ResumeResponseData
-    {
-        public string RequestId { get; set; } = string.Empty; // Giá trị mặc định
-        public bool Success { get; set; }
-        public List<MissedMessage> MissedMessages { get; set; } = new List<MissedMessage>(); // Giá trị mặc định
-        public Dictionary<string, long> CurrentSeq { get; set; } = new Dictionary<string, long>(); // Giá trị mặc định
-        public string Error { get; set; } = string.Empty; // Giá trị mặc định
-    }
-
-    public class MissedMessage
-    {
-        public string ConversationId { get; set; } = string.Empty; // Giá trị mặc định
-        public long Seq { get; set; }
-        public object Message { get; set; } = new object(); // Giá trị mặc định
-        public string Type { get; set; } = "message"; // Giá trị mặc định
+        public string UserId { get; set; } = string.Empty; // Giá trị mặc định
+        public string Status { get; set; } = string.Empty; // Giá trị mặc định
+        public DateTime Timestamp { get; set; } = DateTime.UtcNow; // Giá trị mặc định
     }
 }

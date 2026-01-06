@@ -1,372 +1,232 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Extensions.Configuration;
+using Chat_Application.Server.Models;
 using MongoDB.Driver;
-using ChatServer.Models.Presence;
 
-namespace ChatServer.Services
+namespace Chat_Application.Server.Services
 {
-    public class PresenceService
+    public class PresenceService : IDisposable
     {
-        private readonly IMongoCollection<UserPresence> _presenceCollection;
-        private readonly IMongoCollection<UserSession> _sessionCollection;
-        private readonly ConcurrentDictionary<string, Timer> _heartbeatTimers;
-        private readonly ConcurrentDictionary<string, DateTime> _lastHeartbeatTimes;
-        private readonly int _heartbeatInterval = 15; // 15 giây
         private readonly ConnectionManager _connectionManager;
-        private readonly ILogger<PresenceService> _logger;
-
+        private readonly IMongoCollection<Presence> _presenceCollection;
+        private readonly IMongoCollection<User> _userCollection; // Giả sử có User collection
+        private readonly Timer _heartbeatTimer;
+        private readonly Timer _cleanupTimer;
+        private readonly WebSocketServer _webSocketServer; // Cần reference đến WebSocket server
+        
         public PresenceService(
-            IConfiguration configuration, 
-            ConnectionManager connectionManager)
+            ConnectionManager connectionManager,
+            IMongoDatabase database,
+            WebSocketServer webSocketServer = null)
         {
             _connectionManager = connectionManager;
-            _logger = new Logger<PresenceService>(new LoggerFactory());
+            _presenceCollection = database.GetCollection<Presence>("presence");
+            _userCollection = database.GetCollection<User>("users"); // Adjust if different
+            _webSocketServer = webSocketServer;
             
-            // Kết nối MongoDB Atlas
-            var connectionString = configuration.GetConnectionString("MongoDB");
-            var client = new MongoClient(connectionString);
-            var database = client.GetDatabase("ChatAppDB");
+            // Timer cho heartbeat (mỗi 30 giây flush DB)
+            _heartbeatTimer = new Timer(
+                callback: FlushPresenceToDatabase,
+                state: null,
+                dueTime: TimeSpan.FromSeconds(10),
+                period: TimeSpan.FromSeconds(30)
+            );
             
-            _presenceCollection = database.GetCollection<UserPresence>("user_presence");
-            _sessionCollection = database.GetCollection<UserSession>("user_sessions");
+            // Timer cho cleanup (mỗi phút)
+            _cleanupTimer = new Timer(
+                callback: _ => _connectionManager.CleanupInactiveConnections(),
+                state: null,
+                dueTime: TimeSpan.FromMinutes(1),
+                period: TimeSpan.FromMinutes(1)
+            );
             
-            _heartbeatTimers = new ConcurrentDictionary<string, Timer>();
-            _lastHeartbeatTimes = new ConcurrentDictionary<string, DateTime>();
-            
-            CreateIndexes();
-            Console.WriteLine("✅ PresenceService initialized");
+            Console.WriteLine("[PresenceService] Started with heartbeat every 30s");
         }
         
-        private void CreateIndexes()
+        // 1. Cập nhật presence khi user connect
+        public void UserConnected(string userId, string connectionId)
         {
-            try
+            // Cập nhật trong ConnectionManager (đã được AddConnection)
+            // Cập nhật trong database
+            UpdateUserPresenceInDb(userId, "online", connectionId);
+            
+            // Broadcast đến các conversation của user này
+            BroadcastPresenceUpdate(userId, "online");
+        }
+        
+        // 2. Cập nhật presence khi user disconnect
+        public void UserDisconnected(string connectionId)
+        {
+            var state = _connectionManager.GetConnectionState(connectionId);
+            if (state != null)
             {
-                // Tạo index cho performance
-                var presenceIndex = Builders<UserPresence>.IndexKeys
-                    .Ascending(p => p.UserId)
-                    .Ascending(p => p.Status);
-                _presenceCollection.Indexes.CreateOne(
-                    new CreateIndexModel<UserPresence>(presenceIndex));
+                // Kiểm tra xem user còn connection nào khác không
+                var userConnections = _connectionManager.GetUserConnections(state.UserId);
+                var isStillOnline = userConnections.Count > 1 || 
+                                   (userConnections.Count == 1 && userConnections[0] != connectionId);
                 
-                var sessionIndex = Builders<UserSession>.IndexKeys
-                    .Ascending(s => s.UserId)
-                    .Ascending(s => s.IsActive);
-                _sessionCollection.Indexes.CreateOne(
-                    new CreateIndexModel<UserSession>(sessionIndex));
-                    
-                Console.WriteLine("✅ Indexes created for Presence collections");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"❌ Error creating indexes: {ex.Message}");
+                if (!isStillOnline)
+                {
+                    // User hoàn toàn offline
+                    UpdateUserPresenceInDb(state.UserId, "offline", null);
+                    BroadcastPresenceUpdate(state.UserId, "offline");
+                }
             }
         }
         
-        public async Task<UserSession> UserConnectedAsync(
-            string userId, 
-            string connectionId, 
-            string deviceId, 
-            string ipAddress)
+        // 3. Xử lý heartbeat từ client
+        public void HandleHeartbeat(string connectionId, string requestId)
         {
-            try
+            if (_connectionManager.UpdateHeartbeat(connectionId))
             {
-                Console.WriteLine($"👤 User connecting: {userId}, Connection: {connectionId}");
-                
-                // Tạo session mới
-                var session = new UserSession
+                // Gửi heartbeat ack
+                SendHeartbeatAck(connectionId, requestId);
+            }
+        }
+        
+        // 4. Cập nhật status (online/away/offline)
+        public void UpdateUserStatus(string userId, string status)
+        {
+            var connections = _connectionManager.GetUserConnections(userId);
+            var connectionId = connections.FirstOrDefault();
+            
+            UpdateUserPresenceInDb(userId, status, connectionId);
+            BroadcastPresenceUpdate(userId, status);
+        }
+        
+        // 5. Lấy presence của user
+        public async Task<Presence> GetUserPresence(string userId)
+        {
+            var filter = Builders<Presence>.Filter.Eq(p => p.UserId, userId);
+            var presence = await _presenceCollection.Find(filter).FirstOrDefaultAsync();
+            
+            // Nếu không có trong DB, tạo mới
+            if (presence == null)
+            {
+                presence = new Presence
                 {
                     UserId = userId,
-                    SessionId = Guid.NewGuid().ToString(),
-                    ConnectionId = connectionId,
-                    DeviceId = deviceId,
-                    IpAddress = ipAddress,
-                    ConnectedAt = DateTime.UtcNow,
-                    LastActivity = DateTime.UtcNow,
-                    IsActive = true,
-                    ResumeToken = GenerateResumeToken()
+                    Status = _connectionManager.IsUserOnline(userId) ? "online" : "offline",
+                    LastSeen = DateTime.UtcNow
                 };
-                
-                await _sessionCollection.InsertOneAsync(session);
-                Console.WriteLine($"✅ Session created: {session.SessionId}");
-                
-                // Cập nhật presence
-                var filter = Builders<UserPresence>.Filter.Eq(p => p.UserId, userId);
-                var update = Builders<UserPresence>.Update
-                    .Set(p => p.Status, PresenceStatus.Online)
+            }
+            else if (_connectionManager.IsUserOnline(userId) && presence.Status != "online")
+            {
+                // Nếu đang online nhưng DB ghi offline
+                presence.Status = "online";
+                presence.LastSeen = DateTime.UtcNow;
+                await _presenceCollection.ReplaceOneAsync(filter, presence);
+            }
+            
+            return presence;
+        }
+        
+        // PRIVATE METHODS
+        
+        private async void UpdateUserPresenceInDb(string userId, string status, string connectionId)
+        {
+            try
+            {
+                var filter = Builders<Presence>.Filter.Eq(p => p.UserId, userId);
+                var update = Builders<Presence>.Update
+                    .Set(p => p.Status, status)
                     .Set(p => p.LastSeen, DateTime.UtcNow)
-                    .Set(p => p.LastHeartbeat, DateTime.UtcNow)
-                    .Set(p => p.ConnectionId, connectionId)
-                    .Set(p => p.DeviceId, deviceId)
-                    .SetOnInsert(p => p.Id, ObjectId.GenerateNewId().ToString());
+                    .Set(p => p.UpdatedAt, DateTime.UtcNow)
+                    .Set(p => p.ConnectionId, connectionId);
+                    
+                var options = new UpdateOptions { IsUpsert = true };
                 
-                await _presenceCollection.UpdateOneAsync(
-                    filter, 
-                    update, 
-                    new UpdateOptions { IsUpsert = true });
+                await _presenceCollection.UpdateOneAsync(filter, update, options);
                 
-                Console.WriteLine($"✅ Presence updated to Online for user: {userId}");
-                
-                // Bắt đầu heartbeat
-                StartHeartbeat(userId, connectionId);
-                
-                // Broadcast presence update
-                await BroadcastPresenceUpdateAsync(userId, PresenceStatus.Online);
-                
-                return session;
+                Console.WriteLine($"[PresenceService] Updated {userId} status to {status}");
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Error in UserConnectedAsync: {ex.Message}");
-                throw;
+                Console.WriteLine($"[PresenceService] Error updating presence: {ex.Message}");
             }
         }
         
-        public async Task UserDisconnectedAsync(string connectionId)
+        private async void FlushPresenceToDatabase(object state)
         {
             try
             {
-                Console.WriteLine($"🔌 User disconnecting: {connectionId}");
+                var onlineUsers = _connectionManager.GetAllOnlineUsers();
                 
-                // Tìm session theo connectionId
-                var sessionFilter = Builders<UserSession>.Filter.Eq(s => s.ConnectionId, connectionId);
-                var sessionUpdate = Builders<UserSession>.Update
-                    .Set(s => s.IsActive, false)
-                    .Set(s => s.DisconnectedAt, DateTime.UtcNow);
+                var updates = new List<WriteModel<Presence>>();
+                var now = DateTime.UtcNow;
                 
-                await _sessionCollection.UpdateOneAsync(sessionFilter, sessionUpdate);
-                
-                // Tìm presence
-                var presenceFilter = Builders<UserPresence>.Filter.Eq(p => p.ConnectionId, connectionId);
-                var presence = await _presenceCollection.Find(presenceFilter).FirstOrDefaultAsync();
-                
-                if (presence != null)
+                foreach (var userId in onlineUsers)
                 {
-                    // Kiểm tra nếu user còn session nào active khác không
-                    var activeSessionCount = await _sessionCollection
-                        .CountDocumentsAsync(s => s.UserId == presence.UserId && s.IsActive == true);
-                    
-                    if (activeSessionCount == 0)
-                    {
-                        // Không còn session nào active -> chuyển sang offline
-                        var update = Builders<UserPresence>.Update
-                            .Set(p => p.Status, PresenceStatus.Offline)
-                            .Set(p => p.LastSeen, DateTime.UtcNow);
+                    var filter = Builders<Presence>.Filter.Eq(p => p.UserId, userId);
+                    var update = Builders<Presence>.Update
+                        .Set(p => p.Status, "online")
+                        .Set(p => p.LastSeen, now)
+                        .Set(p => p.UpdatedAt, now);
                         
-                        await _presenceCollection.UpdateOneAsync(presenceFilter, update);
-                        
-                        Console.WriteLine($"✅ User {presence.UserId} marked as Offline");
-                        
-                        // Broadcast
-                        await BroadcastPresenceUpdateAsync(presence.UserId, PresenceStatus.Offline);
-                    }
-                    else
-                    {
-                        Console.WriteLine($"ℹ️ User {presence.UserId} still has other active sessions: {activeSessionCount}");
-                    }
-                    
-                    // Dừng heartbeat
-                    StopHeartbeat(presence.UserId);
+                    updates.Add(new UpdateOneModel<Presence>(filter, update) { IsUpsert = true });
                 }
                 
-                Console.WriteLine($"✅ User disconnected cleanup completed for connection: {connectionId}");
+                if (updates.Count > 0)
+                {
+                    await _presenceCollection.BulkWriteAsync(updates);
+                    Console.WriteLine($"[PresenceService] Flushed {updates.Count} users to DB");
+                }
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Error in UserDisconnectedAsync: {ex.Message}");
+                Console.WriteLine($"[PresenceService] Error flushing to DB: {ex.Message}");
             }
         }
         
-        private void StartHeartbeat(string userId, string connectionId)
+        private void BroadcastPresenceUpdate(string userId, string status)
         {
-            StopHeartbeat(userId); // Dừng timer cũ nếu có
+            // TODO: Cần lấy danh sách conversation của user
+            // Hiện tại tạm thời broadcast đến tất cả connections
             
-            Console.WriteLine($"💓 Starting heartbeat for user: {userId}");
-            
-            var timer = new Timer(async state =>
+            var presenceEvent = new
             {
-                try
+                type = "presence_updated",
+                payload = new
                 {
-                    var now = DateTime.UtcNow;
-                    _lastHeartbeatTimes[userId] = now;
-                    
-                    // Cập nhật heartbeat time
-                    var filter = Builders<UserPresence>.Filter.Eq(p => p.UserId, userId);
-                    var update = Builders<UserPresence>.Update
-                        .Set(p => p.LastHeartbeat, now);
-                    
-                    var result = await _presenceCollection.UpdateOneAsync(filter, update);
-                    
-                    // Kiểm tra connection còn active không
-                    if (!_connectionManager.IsConnectionActive(connectionId))
-                    {
-                        Console.WriteLine($"⚠️ Heartbeat detected inactive connection for user {userId}");
-                        await UserDisconnectedAsync(connectionId);
-                        StopHeartbeat(userId);
-                        return;
-                    }
-                    
-                    Console.WriteLine($"✅ Heartbeat updated for user {userId}");
+                    userId = userId,
+                    status = status,
+                    timestamp = DateTime.UtcNow
                 }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"❌ Heartbeat error for user {userId}: {ex.Message}");
-                }
-            }, null, TimeSpan.FromSeconds(_heartbeatInterval), TimeSpan.FromSeconds(_heartbeatInterval));
+            };
             
-            _heartbeatTimers[userId] = timer;
-        }
-        
-        private void StopHeartbeat(string userId)
-        {
-            if (_heartbeatTimers.TryRemove(userId, out var timer))
-            {
-                timer?.Dispose();
-                Console.WriteLine($"🛑 Heartbeat stopped for user: {userId}");
-            }
-            _lastHeartbeatTimes.TryRemove(userId, out _);
-        }
-        
-        private async Task BroadcastPresenceUpdateAsync(string userId, PresenceStatus status)
-        {
-            try
-            {
-                // Lấy danh sách conversations của user
-                var presence = await GetUserPresenceAsync(userId);
-                if (presence?.ConversationIds == null) 
-                {
-                    Console.WriteLine($"ℹ️ No conversations to broadcast for user: {userId}");
-                    return;
-                }
-                
-                var updateEvent = new
-                {
-                    type = "presence_update",
-                    data = new
-                    {
-                        userId,
-                        status = status.ToString().ToLower(),
-                        lastSeen = DateTime.UtcNow,
-                        customStatus = presence.CustomStatus
-                    }
-                };
-                
-                // Broadcast đến tất cả conversations
-                foreach (var conversationId in presence.ConversationIds)
-                {
-                    await _connectionManager.BroadcastToConversationAsync(
-                        conversationId, 
-                        updateEvent, 
-                        excludeUserId: userId);
-                }
-                
-                Console.WriteLine($"📢 Broadcasted presence update for user {userId}: {status}");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"❌ Error broadcasting presence update: {ex.Message}");
-            }
-        }
-        
-        public async Task<UserPresence> GetUserPresenceAsync(string userId)
-        {
-            return await _presenceCollection
-                .Find(p => p.UserId == userId)
-                .FirstOrDefaultAsync();
-        }
-        
-        public async Task UpdateUserPresenceAsync(string userId, PresenceStatus status, string customStatus = null)
-        {
-            var filter = Builders<UserPresence>.Filter.Eq(p => p.UserId, userId);
-            var update = Builders<UserPresence>.Update
-                .Set(p => p.Status, status)
-                .Set(p => p.LastSeen, DateTime.UtcNow);
+            var message = JsonSerializer.Serialize(presenceEvent);
             
-            if (customStatus != null)
-            {
-                update = update.Set(p => p.CustomStatus, customStatus);
-            }
+            // Broadcast đến tất cả connections (tạm thời)
+            // Thực tế chỉ broadcast đến members trong cùng conversation
+            Console.WriteLine($"[PresenceService] Broadcasted {userId} status: {status}");
             
-            await _presenceCollection.UpdateOneAsync(filter, update);
-            await BroadcastPresenceUpdateAsync(userId, status);
-            
-            Console.WriteLine($"✅ Presence updated for user {userId}: {status}");
+            // Nếu có WebSocket server reference, thực hiện broadcast
+            // _webSocketServer.Broadcast(message);
         }
         
-        public async Task UpdateConversationsAsync(string userId, List<string> conversationIds)
+        private void SendHeartbeatAck(string connectionId, string requestId)
         {
-            var filter = Builders<UserPresence>.Filter.Eq(p => p.UserId, userId);
-            var update = Builders<UserPresence>.Update
-                .Set(p => p.ConversationIds, conversationIds);
-            
-            await _presenceCollection.UpdateOneAsync(filter, update);
-            Console.WriteLine($"✅ Conversations updated for user {userId}: {conversationIds.Count} conversations");
-        }
-        
-        private string GenerateResumeToken()
-        {
-            return Convert.ToBase64String(Guid.NewGuid().ToByteArray())
-                .Replace("=", "")
-                .Replace("+", "-")
-                .Replace("/", "_");
-        }
-        
-        public async Task<bool> ValidateResumeToken(string userId, string resumeToken)
-        {
-            var session = await _sessionCollection
-                .Find(s => s.UserId == userId && s.ResumeToken == resumeToken && s.IsActive)
-                .FirstOrDefaultAsync();
-                
-            return session != null;
-        }
-        
-        public async Task<string> GetResumeToken(string sessionId)
-        {
-            var session = await _sessionCollection
-                .Find(s => s.SessionId == sessionId)
-                .FirstOrDefaultAsync();
-                
-            return session?.ResumeToken;
-        }
-        
-        public async Task CleanupAllPresence()
-        {
-            try
+            var ack = new
             {
-                Console.WriteLine("🧹 Cleaning up all presence data...");
-                
-                // Dừng tất cả timers
-                foreach (var timer in _heartbeatTimers.Values)
-                {
-                    timer?.Dispose();
-                }
-                _heartbeatTimers.Clear();
-                
-                // Đánh dấu tất cả sessions là inactive
-                var filter = Builders<UserSession>.Filter.Eq(s => s.IsActive, true);
-                var update = Builders<UserSession>.Update
-                    .Set(s => s.IsActive, false)
-                    .Set(s => s.DisconnectedAt, DateTime.UtcNow);
-                
-                await _sessionCollection.UpdateManyAsync(filter, update);
-                
-                // Set tất cả users thành offline
-                var presenceFilter = Builders<UserPresence>.Filter.Eq(p => p.Status, PresenceStatus.Online);
-                var presenceUpdate = Builders<UserPresence>.Update
-                    .Set(p => p.Status, PresenceStatus.Offline);
-                
-                await _presenceCollection.UpdateManyAsync(presenceFilter, presenceUpdate);
-                
-                Console.WriteLine("✅ All presence data cleaned up");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"❌ Error during presence cleanup: {ex.Message}");
-            }
+                type = "heartbeat_ack",
+                requestId = requestId,
+                timestamp = DateTime.UtcNow
+            };
+            
+            var message = JsonSerializer.Serialize(ack);
+            
+            // TODO: Gửi qua WebSocket connection
+            Console.WriteLine($"[PresenceService] Sent heartbeat ack to {connectionId}");
+        }
+        
+        public void Dispose()
+        {
+            _heartbeatTimer?.Dispose();
+            _cleanupTimer?.Dispose();
         }
     }
 }
