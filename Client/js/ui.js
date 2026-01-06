@@ -5,18 +5,24 @@ function displayMessage(message) {
     const messagesArea = document.getElementById('messagesArea');
     if (!messagesArea) return;
 
-    const currentUserId = localStorage.getItem('mockUserId');
+    const currentUserId = localStorage.getItem('userId') || localStorage.getItem('mockUserId');
     const isOwn = message.senderId === currentUserId;
+    const senderName = message.senderDisplayName || message.senderName || message.senderId || 'User';
+
+    const clientIdAttr = message.clientMessageId ? ` data-client-id="${message.clientMessageId}"` : '';
+    const timeText = message.seq
+        ? `${formatTime(message.createdAt)} • Seq: ${message.seq}`
+        : formatTime(message.createdAt);
     
     const messageHTML = `
-        <div class="message ${isOwn ? 'own' : ''}" data-id="${message.messageId}">
-            ${!isOwn ? `<img src="assets/images/default-avatar.png" class="avatar" alt="Avatar">` : ''}
+        <div class="message ${isOwn ? 'own' : ''}" data-id="${message.messageId}"${clientIdAttr}>
+            ${!isOwn ? `<img src="assets/images/default-avatar.svg" class="avatar" alt="Avatar">` : ''}
             <div class="message-content">
-                ${!isOwn ? `<div class="message-sender">${message.senderName || 'User'}</div>` : ''}
+                ${!isOwn ? `<div class="message-sender">${escapeHtml(senderName)}</div>` : ''}
                 <div class="message-text">${escapeHtml(message.content)}</div>
-                <div class="message-time">${formatTime(message.createdAt)}</div>
+                <div class="message-time">${timeText}</div>
             </div>
-            ${isOwn ? `<img src="assets/images/default-avatar.png" class="avatar" alt="Avatar">` : ''}
+            ${isOwn ? `<img src="assets/images/default-avatar.svg" class="avatar" alt="Avatar">` : ''}
         </div>
     `;
     

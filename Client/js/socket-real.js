@@ -125,15 +125,33 @@ class SocketHandler {
         return response.payload.messages;
     }
 
-    async sendMessage(conversationId, content, messageType = 'text') {
-        const clientMessageId = `msg-${Date.now()}-${Math.random()}`;
+    async sendMessage(conversationId, content, messageType = 'text', clientMessageId = null) {
+        const effectiveClientMessageId = clientMessageId || `msg-${Date.now()}-${Math.random()}`;
         const response = await this.send('send_message', {
             conversationId,
             content,
             messageType,
-            clientMessageId
+            clientMessageId: effectiveClientMessageId
         });
+        return { ...response.payload, clientMessageId: effectiveClientMessageId };
+    }
+
+    async createDirect(otherUserId) {
+        const response = await this.send('create_direct', { otherUserId });
         return response.payload;
+    }
+
+    // Send first message to a user without needing conversationId
+    async sendDirectMessage(otherUserId, content, messageType = 'text', clientMessageId = null) {
+        const effectiveClientMessageId = clientMessageId || `msg-${Date.now()}-${Math.random()}`;
+        const response = await this.send('send_message', {
+            conversationId: '',
+            otherUserId,
+            content,
+            messageType,
+            clientMessageId: effectiveClientMessageId
+        });
+        return { ...response.payload, clientMessageId: effectiveClientMessageId };
     }
 
     async createGroup(title, memberIds = []) {

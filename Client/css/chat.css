@@ -251,7 +251,9 @@
 
 .message-text {
     font-size: 14px;
-    word-wrap: break-word;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .message-time {
