@@ -9,8 +9,18 @@ using ChatServer.Services;
 using ChatServer.WebSockets;
 using System.Text;
 using System.Text.Json;
+using MongoDB.Driver;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddSingleton<ConnectionManager>();
+builder.Services.AddSingleton<IMongoDatabase>(sp =>
+{
+    var client = new MongoClient("your-mongodb-connection-string");
+    return client.GetDatabase("ChatAppDB");
+});
+builder.Services.AddSingleton<PresenceService>();
+
 
 // Configure JSON serializer để dùng camelCase
 builder.Services.ConfigureHttpJsonOptions(options =>
@@ -27,6 +37,12 @@ builder.Configuration.AddJsonFile(configPath, optional: false, reloadOnChange: t
 var mongoConnectionString = builder.Configuration["MongoDB:ConnectionString"] ?? "";
 var mongoDatabaseName = builder.Configuration["MongoDB:DatabaseName"] ?? "ChatAppDB";
 builder.Services.AddSingleton(new MongoDBContext(mongoConnectionString, mongoDatabaseName));
+builder.Services.AddSingleton<ConnectionManager>();
+// SAU ConnectionManager
+builder.Services.AddSingleton<PresenceService>();
+builder.Services.AddSingleton<ResumeService>();
+builder.Services.AddSingleton<MongoDBContext>();
+
 
 // JWT Settings
 var jwtSecretKey = builder.Configuration["JwtSettings:SecretKey"] ?? "YourSuperSecretKey32CharactersLong!";
@@ -124,4 +140,14 @@ Console.WriteLine("📦 MongoDB: " + mongoDatabaseName);
 Console.WriteLine("🔐 Auth API: http://localhost:5000/api/auth");
 Console.WriteLine("✅ Health check: http://localhost:5000/health");
 
+// Lấy ConnectionManager từ DI
+var connectionManager = app.Services.GetRequiredService<ConnectionManager>();
+
+// Test: In ra số lượng services đã đăng ký
+Console.WriteLine("[Startup] Services registered:");
+Console.WriteLine($"- ConnectionManager: Registered");
+// Sẽ thêm PresenceService, ResumeService sau
+
 app.Run();
+
+
