@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Chat - Chat Application</title>
-    <link rel="stylesheet" href="css/style.css">
-    <link rel="stylesheet" href="css/chat.css">
+    <link rel="stylesheet" href="css/style.css?v=20260110">
+    <link rel="stylesheet" href="css/chat.css?v=20260110">
 </head>
 <body>
     <div class="chat-container">
@@ -84,6 +84,10 @@
 
                 <!-- Message input -->
                 <div class="message-input-area">
+                    <input type="file" id="fileInput" class="file-input-hidden" accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip,.rar" multiple>
+                    <label class="btn-icon btn-attachment" id="btnAttachment" for="fileInput" title="Chọn file">
+                        ＋
+                    </label>
                     <button class="btn-icon" id="btnSticker" title="Sticker" disabled>
                         😊 <small>(Người 4)</small>
                     </button>
@@ -91,6 +95,15 @@
                     <button class="btn-send" id="btnSend">
                         Gửi ➤
                     </button>
+                </div>
+                
+                <!-- File upload preview -->
+                <div class="file-preview-area" id="filePreviewArea" style="display: none;">
+                    <div class="file-preview-header">
+                        <span>File đính kèm</span>
+                        <button class="btn-close-preview" id="btnClosePreview">✕</button>
+                    </div>
+                    <div class="file-preview-list" id="filePreviewList"></div>
                 </div>
             </div>
         </div>
@@ -157,8 +170,9 @@
         </div>
     </div>
     
-    <script src="js/socket-real.js"></script>
-    <script src="js/ui.js"></script>
-    <script src="js/app.js"></script>
+    <script src="js/upload.js?v=20260110"></script>
+    <script src="js/socket-real.js?v=20260110"></script>
+    <script src="js/ui.js?v=20260110"></script>
+    <script src="js/app.js?v=20260110"></script>
 </body>
 </html>

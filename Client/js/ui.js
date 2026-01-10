@@ -1,5 +1,38 @@
 // ===== UI INTERACTION HANDLER (Người 2) =====
 
+function updateUploadProgressUI(clientMessageId, progress, statusText = '') {
+    if (!clientMessageId) return;
+    const el = document.querySelector(`.message[data-client-id="${clientMessageId}"]`);
+    if (!el) return;
+
+    const wrap = el.querySelector('.upload-progress');
+    if (!wrap) return;
+
+    const fill = wrap.querySelector('.upload-progress-fill');
+    if (fill && typeof progress === 'number') {
+        const safe = Math.max(0, Math.min(100, progress));
+        fill.style.width = `${safe}%`;
+    }
+
+    const text = wrap.querySelector('.upload-progress-text');
+    if (text) {
+        const pct = typeof progress === 'number' ? `${Math.floor(progress)}%` : '';
+        text.textContent = statusText ? `${statusText} ${pct}`.trim() : pct;
+    }
+}
+
+function clearUploadProgressUI(clientMessageId) {
+    if (!clientMessageId) return;
+    const el = document.querySelector(`.message[data-client-id="${clientMessageId}"]`);
+    if (!el) return;
+    const wrap = el.querySelector('.upload-progress');
+    if (wrap) wrap.remove();
+}
+
+// Expose for app.js
+window.updateUploadProgressUI = updateUploadProgressUI;
+window.clearUploadProgressUI = clearUploadProgressUI;
+
 // Display incoming message from WebSocket
 function displayMessage(message) {
     const messagesArea = document.getElementById('messagesArea');
@@ -14,12 +47,84 @@ function displayMessage(message) {
         ? `${formatTime(message.createdAt)} • Seq: ${message.seq}`
         : formatTime(message.createdAt);
     
+    // Helper: resolve relative /uploads/... to server absolute URL
+    const resolveFileUrl = (url) => {
+        if (!url) return '';
+        if (url.startsWith('http://') || url.startsWith('https://')) return url;
+        if (url.startsWith('/')) {
+            try {
+                const svc = new UploadService();
+                const origin = new URL(svc.baseUrl).origin;
+                return origin + url;
+            } catch {
+                return 'http://localhost:5000' + url;
+            }
+        }
+        return url;
+    };
+
+    // Render file attachment nếu có
+    let fileHTML = '';
+    if (message.fileUrl) {
+        const fileUrl = resolveFileUrl(message.fileUrl);
+        if (message.messageType === 'image') {
+            fileHTML = `
+                <div class="message-file message-image">
+                    <img src="${fileUrl}" alt="${escapeHtml(message.fileName || 'Image')}" 
+                         onclick="window.open('${fileUrl}', '_blank')">
+                </div>
+            `;
+        } else if (message.messageType === 'video') {
+            fileHTML = `
+                <div class="message-file message-video">
+                    <video controls>
+                        <source src="${fileUrl}" type="${message.fileType || 'video/mp4'}">
+                    </video>
+                </div>
+            `;
+        } else {
+            const uploadService = new UploadService();
+            const icon = uploadService.getFileIcon(message.fileType || '');
+            const size = message.fileSize ? uploadService.formatFileSize(message.fileSize) : '';
+            
+            fileHTML = `
+                <div class="message-file">
+                    <div class="message-file-item" onclick="window.open('${fileUrl}', '_blank')">
+                        <div class="file-icon">${icon}</div>
+                        <div class="file-info">
+                            <div class="file-name">${escapeHtml(message.fileName || 'File')}</div>
+                            ${size ? `<div class="file-size">${size}</div>` : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+    }
+
+    // Nếu đang upload file (optimistic) -> show progress bar
+    const hasUploadProgress = typeof message.uploadProgress === 'number' && message.uploadProgress >= 0 && message.uploadProgress < 100;
+    const uploadStatusText = message.uploadStatusText || (message.uploadStatus === 'paused' ? 'Tạm dừng' : (message.uploadStatus === 'uploading' ? 'Đang gửi' : ''));
+    const progressHTML = hasUploadProgress ? `
+        <div class="upload-progress" role="progressbar" aria-valuenow="${Math.floor(message.uploadProgress)}" aria-valuemin="0" aria-valuemax="100">
+            <div class="upload-progress-bar">
+                <div class="upload-progress-fill" style="width: ${Math.max(0, Math.min(100, message.uploadProgress))}%;"></div>
+            </div>
+            <div class="upload-progress-text">${escapeHtml(uploadStatusText)} ${Math.floor(message.uploadProgress)}%</div>
+        </div>
+    ` : '';
+
+    // Nếu là tin nhắn đính kèm và content chỉ là tên file thì không render phần text để tránh bị lặp
+    const shouldRenderText = !!(message.content && String(message.content).trim())
+        && !(message.fileUrl && message.fileName && String(message.content).trim() === String(message.fileName).trim());
+    
     const messageHTML = `
         <div class="message ${isOwn ? 'own' : ''}" data-id="${message.messageId}"${clientIdAttr}>
             ${!isOwn ? `<img src="assets/images/default-avatar.svg" class="avatar" alt="Avatar">` : ''}
             <div class="message-content">
                 ${!isOwn ? `<div class="message-sender">${escapeHtml(senderName)}</div>` : ''}
-                <div class="message-text">${escapeHtml(message.content)}</div>
+                ${shouldRenderText ? `<div class="message-text">${escapeHtml(message.content)}</div>` : ''}
+                ${fileHTML}
+                ${progressHTML}
                 <div class="message-time">${timeText}</div>
             </div>
             ${isOwn ? `<img src="assets/images/default-avatar.svg" class="avatar" alt="Avatar">` : ''}
@@ -30,8 +135,12 @@ function displayMessage(message) {
     messagesArea.scrollTop = messagesArea.scrollHeight;
 
     // Update conversation last message
-    updateConversationLastMessage(message.conversationId, message.content);
+    const lastMsg = message.content || `📎 ${message.fileName || 'File'}`;
+    updateConversationLastMessage(message.conversationId, lastMsg);
 }
+
+// Ensure app.js can reliably call window.displayMessage (history render after reload)
+window.displayMessage = displayMessage;
 
 // Update conversation list when new message arrives
 function updateConversationLastMessage(conversationId, lastMessage) {

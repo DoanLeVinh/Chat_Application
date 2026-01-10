@@ -1,9 +1,9 @@
 /* ====== CHAT LAYOUT ====== */
 .chat-container {
     display: grid;
-    grid-template-columns: 320px 1fr auto;
+    grid-template-columns: 360px 1fr auto;
     height: 100vh;
-    background: white;
+    background: var(--bg-color);
 }
 
 /* ====== SIDEBAR ====== */
@@ -93,15 +93,17 @@
 .conversation-list {
     flex: 1;
     overflow-y: auto;
+    padding: 8px;
 }
 
 .conversation-item {
     display: flex;
     align-items: center;
-    padding: 12px 16px;
+    padding: 10px 12px;
     cursor: pointer;
     transition: background 0.2s;
-    border-bottom: 1px solid var(--border-color);
+    border-radius: 12px;
+    margin: 2px 0;
 }
 
 .conversation-item:hover {
@@ -172,6 +174,9 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    position: sticky;
+    top: 0;
+    z-index: 5;
 }
 
 .chat-info {
@@ -204,10 +209,10 @@
 .messages-area {
     flex: 1;
     overflow-y: auto;
-    padding: 20px;
+    padding: 16px 18px;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
 }
 
 .message {
@@ -230,12 +235,14 @@
     background: white;
     padding: 10px 14px;
     border-radius: 18px;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    border: 1px solid var(--secondary-color);
+    box-shadow: none;
 }
 
 .message.own .message-content {
     background: var(--primary-color);
     color: white;
+    border: none;
 }
 
 .message-sender {
@@ -254,6 +261,7 @@
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     word-break: break-word;
+    line-height: 1.35;
 }
 
 .message-time {
@@ -267,25 +275,284 @@
 }
 
 .message-input-area {
-    padding: 16px 20px;
+    padding: 12px 16px;
     background: white;
     border-top: 1px solid var(--border-color);
     display: flex;
     gap: 10px;
     align-items: center;
+    position: sticky;
+    bottom: 0;
+    z-index: 5;
 }
 
-.message-input-area input {
+.btn-attachment {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--bg-color);
+    border: 1px solid var(--border-color);
+}
+
+.btn-attachment:hover {
+    background: var(--secondary-color);
+}
+
+.message-input-area input[type="text"] {
     flex: 1;
     padding: 10px 16px;
     border: 1px solid var(--border-color);
     border-radius: 20px;
     font-size: 14px;
+    background: var(--bg-color);
 }
 
-.message-input-area input:focus {
+.message-input-area input[type="text"]:focus {
     outline: none;
     border-color: var(--primary-color);
+    background: white;
+}
+
+/* Hide the native file input completely (keep it clickable via label/button) */
+.message-input-area input[type="file"].file-input-hidden {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    clip-path: inset(50%) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* ====== FILE UPLOAD ====== */
+.file-preview-area {
+    background: white;
+    border-top: 1px solid var(--border-color);
+    padding: 12px 20px;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.file-preview-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.btn-close-preview {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 18px;
+    color: var(--text-secondary);
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-close-preview:hover {
+    color: var(--danger-color);
+}
+
+.file-preview-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.file-preview-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px;
+    background: var(--bg-color);
+    border-radius: 8px;
+}
+
+.file-preview-icon {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    background: white;
+    border-radius: 4px;
+}
+
+.file-preview-icon img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 4px;
+}
+
+.file-preview-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.file-preview-name {
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.file-preview-size {
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.file-preview-progress {
+    flex: 1;
+}
+
+.progress-bar {
+    height: 4px;
+    background: var(--border-color);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 4px;
+}
+
+.progress-bar-fill {
+    height: 100%;
+    background: var(--primary-color);
+    transition: width 0.3s;
+}
+
+.btn-remove-file {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--danger-color);
+    font-size: 18px;
+    padding: 4px;
+}
+
+/* Message with file attachments */
+.message-file {
+    margin-top: 8px;
+}
+
+.message-image {
+    max-width: 300px;
+    border-radius: 8px;
+    cursor: pointer;
+}
+
+.message-image img {
+    width: 100%;
+    height: auto;
+    border-radius: 8px;
+}
+
+.message-video {
+    max-width: 300px;
+    border-radius: 8px;
+}
+
+.message-video video {
+    width: 100%;
+    border-radius: 8px;
+}
+
+.message-file-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    background: rgba(0,0,0,0.05);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.message.own .message-file-item {
+    background: rgba(255,255,255,0.2);
+}
+
+.message-file-item:hover {
+    background: rgba(0,0,0,0.1);
+}
+
+.message.own .message-file-item:hover {
+    background: rgba(255,255,255,0.3);
+}
+
+.file-icon {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+}
+
+.file-info {
+    flex: 1;
+}
+
+.file-name {
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.file-size {
+    font-size: 11px;
+    opacity: 0.7;
+}
+
+/* Upload progress under message */
+.upload-progress {
+    margin-top: 8px;
+}
+
+.upload-progress-bar {
+    width: 100%;
+    height: 6px;
+    background: rgba(0,0,0,0.08);
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.message.own .upload-progress-bar {
+    background: rgba(255,255,255,0.25);
+}
+
+.upload-progress-fill {
+    height: 100%;
+    width: 0;
+    background: var(--primary-color);
+    border-radius: 999px;
+    transition: width 0.15s linear;
+}
+
+.message.own .upload-progress-fill {
+    background: rgba(255,255,255,0.85);
+}
+
+.upload-progress-text {
+    margin-top: 4px;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.message.own .upload-progress-text {
+    color: rgba(255,255,255,0.85);
 }
 
 /* ====== RIGHT PANEL ====== */

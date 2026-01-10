@@ -125,14 +125,24 @@ class SocketHandler {
         return response.payload.messages;
     }
 
-    async sendMessage(conversationId, content, messageType = 'text', clientMessageId = null) {
+    async sendMessage(conversationId, content, messageType = 'text', clientMessageId = null, fileUrl = null, fileName = null, fileType = null, fileSize = null) {
         const effectiveClientMessageId = clientMessageId || `msg-${Date.now()}-${Math.random()}`;
-        const response = await this.send('send_message', {
+        const payload = {
             conversationId,
             content,
             messageType,
             clientMessageId: effectiveClientMessageId
-        });
+        };
+        
+        // Thêm thông tin file nếu có
+        if (fileUrl) {
+            payload.fileUrl = fileUrl;
+            payload.fileName = fileName;
+            payload.fileType = fileType;
+            payload.fileSize = fileSize;
+        }
+        
+        const response = await this.send('send_message', payload);
         return { ...response.payload, clientMessageId: effectiveClientMessageId };
     }
 
@@ -142,15 +152,25 @@ class SocketHandler {
     }
 
     // Send first message to a user without needing conversationId
-    async sendDirectMessage(otherUserId, content, messageType = 'text', clientMessageId = null) {
+    async sendDirectMessage(otherUserId, content, messageType = 'text', clientMessageId = null, fileUrl = null, fileName = null, fileType = null, fileSize = null) {
         const effectiveClientMessageId = clientMessageId || `msg-${Date.now()}-${Math.random()}`;
-        const response = await this.send('send_message', {
+        const payload = {
             conversationId: '',
             otherUserId,
             content,
             messageType,
             clientMessageId: effectiveClientMessageId
-        });
+        };
+        
+        // Thêm thông tin file nếu có
+        if (fileUrl) {
+            payload.fileUrl = fileUrl;
+            payload.fileName = fileName;
+            payload.fileType = fileType;
+            payload.fileSize = fileSize;
+        }
+        
+        const response = await this.send('send_message', payload);
         return { ...response.payload, clientMessageId: effectiveClientMessageId };
     }
 

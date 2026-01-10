@@ -130,6 +130,10 @@ body {
     cursor: pointer;
     border-radius: 50%;
     transition: background 0.3s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
 }
 
 .btn-icon:hover {

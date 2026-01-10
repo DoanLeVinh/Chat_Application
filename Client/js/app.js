@@ -184,6 +184,27 @@ function setupEventListeners() {
         openCreateGroupModal();
     });
 
+    // File attachment
+    const fileInput = document.getElementById('fileInput');
+    const btnClosePreview = document.getElementById('btnClosePreview');
+
+    fileInput?.addEventListener('change', handleFileSelection);
+    btnClosePreview?.addEventListener('click', clearFileSelection);
+
+    // Auto pause/resume upload on network changes
+    window.addEventListener('offline', () => {
+        for (const [clientMessageId] of pendingUploads) {
+            if (typeof window.updateUploadProgressUI === 'function') {
+                window.updateUploadProgressUI(clientMessageId, null, 'Mất mạng • Tạm dừng');
+            }
+        }
+        showNotification('Mất kết nối mạng. Upload sẽ tạm dừng.', 'error');
+    });
+
+    window.addEventListener('online', () => {
+        resumePendingUploads();
+    });
+
     // Message send
     document.getElementById('btnSend')?.addEventListener('click', sendMessage);
     document.getElementById('messageInput')?.addEventListener('keypress', (e) => {
@@ -230,10 +251,66 @@ function setupWebSocketHandlers() {
                 pendingEl.dataset.id = payload.messageId;
                 pendingEl.classList.remove('pending');
 
+                // Remove upload progress UI if any
+                if (typeof window.clearUploadProgressUI === 'function') {
+                    window.clearUploadProgressUI(payload.clientMessageId);
+                }
+
                 const timeEl = pendingEl.querySelector('.message-time');
                 if (timeEl) {
                     const timeText = payload.createdAt ? formatTime(payload.createdAt) : formatTime(new Date().toISOString());
                     timeEl.textContent = payload.seq ? `${timeText} • Seq: ${payload.seq}` : timeText;
+                }
+
+                // If this message has attachment info, ensure UI shows it
+                if (payload.fileUrl) {
+                    const contentEl = pendingEl.querySelector('.message-content');
+                    if (contentEl && !contentEl.querySelector('.message-file')) {
+                        const safeUrl = payload.fileUrl;
+                        let attachmentHTML = '';
+                        if (payload.messageType === 'image') {
+                            attachmentHTML = `
+                                <div class="message-file message-image">
+                                    <img src="${safeUrl}" alt="${escapeHtml(payload.fileName || 'Image')}" onclick="window.open('${safeUrl}', '_blank')">
+                                </div>
+                            `;
+                        } else if (payload.messageType === 'video') {
+                            attachmentHTML = `
+                                <div class="message-file message-video">
+                                    <video controls>
+                                        <source src="${safeUrl}" type="${payload.fileType || 'video/mp4'}">
+                                    </video>
+                                </div>
+                            `;
+                        } else {
+                            const icon = (new UploadService()).getFileIcon(payload.fileType || '');
+                            const size = payload.fileSize ? (new UploadService()).formatFileSize(payload.fileSize) : '';
+                            attachmentHTML = `
+                                <div class="message-file">
+                                    <div class="message-file-item" onclick="window.open('${safeUrl}', '_blank')">
+                                        <div class="file-icon">${icon}</div>
+                                        <div class="file-info">
+                                            <div class="file-name">${escapeHtml(payload.fileName || 'File')}</div>
+                                            ${size ? `<div class=\"file-size\">${size}</div>` : ''}
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        }
+
+                        // Remove duplicate text if it equals fileName
+                        const textEl = contentEl.querySelector('.message-text');
+                        if (textEl && payload.fileName && textEl.textContent && textEl.textContent.trim() === String(payload.fileName).trim()) {
+                            textEl.remove();
+                        }
+
+                        const timeNode = contentEl.querySelector('.message-time');
+                        if (timeNode) {
+                            timeNode.insertAdjacentHTML('beforebegin', attachmentHTML);
+                        } else {
+                            contentEl.insertAdjacentHTML('beforeend', attachmentHTML);
+                        }
+                    }
                 }
             }
         }
@@ -388,74 +465,320 @@ function renderMessages(messages) {
     const messagesArea = document.getElementById('messagesArea');
     if (!messagesArea) return;
 
-    const currentUserId = localStorage.getItem('userId');
+    // Clear then re-render using ui.js so attachments (image/video/file) show after reload
+    messagesArea.innerHTML = '';
 
-    messagesArea.innerHTML = messages.reverse().map(msg => {
-        const isOwn = msg.senderId === currentUserId;
-        const time = formatTime(msg.createdAt);
-        const senderName = msg.senderDisplayName || msg.senderId;
-        
-        return `
-            <div class="message ${isOwn ? 'own' : 'other'}">
-                ${!isOwn ? '<img src="assets/images/default-avatar.svg" class="avatar" alt="Avatar">' : ''}
-                <div class="message-content">
-                    ${!isOwn ? `<div class="message-sender">${escapeHtml(senderName)}</div>` : ''}
-                    <div class="message-text">${escapeHtml(msg.content)}</div>
-                    <div class="message-time">${time} • Seq: ${msg.seq}</div>
+    const list = Array.isArray(messages) ? messages.slice().reverse() : [];
+    if (typeof window.displayMessage === 'function') {
+        for (const msg of list) {
+            window.displayMessage(msg);
+        }
+    } else {
+        // Fallback: if ui.js not loaded for some reason
+        const currentUserId = localStorage.getItem('userId');
+        messagesArea.innerHTML = list.map(msg => {
+            const isOwn = msg.senderId === currentUserId;
+            const time = formatTime(msg.createdAt);
+            const senderName = msg.senderDisplayName || msg.senderId;
+            return `
+                <div class="message ${isOwn ? 'own' : 'other'}">
+                    ${!isOwn ? '<img src="assets/images/default-avatar.svg" class="avatar" alt="Avatar">' : ''}
+                    <div class="message-content">
+                        ${!isOwn ? `<div class="message-sender">${escapeHtml(senderName)}</div>` : ''}
+                        ${msg.content ? `<div class="message-text">${escapeHtml(msg.content)}</div>` : ''}
+                        <div class="message-time">${time} • Seq: ${msg.seq}</div>
+                    </div>
+                    ${isOwn ? '<img src="assets/images/default-avatar.svg" class="avatar" alt="Avatar">' : ''}
                 </div>
-                ${isOwn ? '<img src="assets/images/default-avatar.svg" class="avatar" alt="Avatar">' : ''}
-            </div>
-        `;
-    }).join('');
-
-    // Scroll to bottom
-    messagesArea.scrollTop = messagesArea.scrollHeight;
+            `;
+        }).join('');
+        messagesArea.scrollTop = messagesArea.scrollHeight;
+    }
 }
 
 // ===== SEND MESSAGE (Người 2) =====
+// Global variables for file uploads
+let selectedFiles = [];
+let uploadService = null;
+const pendingUploads = new Map(); // clientMessageId -> { file, conversationId, content, messageType, token, lastProgress }
+
+async function resumePendingUploads() {
+    if (pendingUploads.size === 0) return;
+
+    const entries = Array.from(pendingUploads.entries());
+    for (const [clientMessageId, job] of entries) {
+        try {
+            if (!uploadService) uploadService = new UploadService();
+
+            if (typeof window.updateUploadProgressUI === 'function') {
+                window.updateUploadProgressUI(clientMessageId, job.lastProgress ?? 0, 'Đang gửi');
+            }
+
+            const result = await uploadService.uploadResumable(
+                job.file,
+                job.token,
+                (progress) => {
+                    job.lastProgress = progress;
+                    if (typeof window.updateUploadProgressUI === 'function') {
+                        window.updateUploadProgressUI(clientMessageId, progress, 'Đang gửi');
+                    }
+                },
+                (state) => {
+                    if (state?.status === 'paused' && typeof window.updateUploadProgressUI === 'function') {
+                        window.updateUploadProgressUI(clientMessageId, job.lastProgress ?? 0, 'Tạm dừng');
+                    }
+                }
+            );
+
+            await window.socketHandler.sendMessage(
+                job.conversationId,
+                job.content || '',
+                job.messageType,
+                clientMessageId,
+                result.url,
+                job.file.name,
+                job.file.type,
+                job.file.size
+            );
+
+            // Wait for server broadcast to reconcile UI
+            pendingUploads.delete(clientMessageId);
+        } catch {
+            // Keep pending. Will retry when online again.
+            if (typeof window.updateUploadProgressUI === 'function') {
+                window.updateUploadProgressUI(clientMessageId, null, 'Tạm dừng');
+            }
+        }
+    }
+}
+
+// Xử lý file selection
+function handleFileSelection(event) {
+    const files = Array.from(event.target.files);
+    if (files.length === 0) return;
+
+    // Khởi tạo UploadService an toàn (vì handleFileSelection chạy trước sendMessage)
+    if (!uploadService) {
+        if (typeof UploadService !== 'function') {
+            showNotification('Không tải được chức năng upload (UploadService).', 'error');
+            return;
+        }
+        uploadService = new UploadService();
+    }
+
+    // Validate và thêm vào danh sách
+    files.forEach(file => {
+        try {
+            uploadService.validateFile(file);
+            selectedFiles.push(file);
+        } catch (error) {
+            showNotification(error.message, 'error');
+        }
+    });
+
+    // Hiển thị preview
+    displayFilePreview();
+
+    // Đẩy tên file vào ô nhập tin nhắn (CHỈ TÊN FILE)
+    const input = document.getElementById('messageInput');
+    if (input) {
+        const names = files.map(f => f.name).join(', ');
+        input.value = names;
+        input.focus();
+    }
+
+    event.target.value = ''; // Reset input
+}
+
+// Hiển thị file preview
+async function displayFilePreview() {
+    const previewArea = document.getElementById('filePreviewArea');
+    const previewList = document.getElementById('filePreviewList');
+    
+    if (selectedFiles.length === 0) {
+        previewArea.style.display = 'none';
+        return;
+    }
+
+    previewArea.style.display = 'block';
+    previewList.innerHTML = '';
+
+    for (let i = 0; i < selectedFiles.length; i++) {
+        const file = selectedFiles[i];
+        const previewUrl = await uploadService.createFilePreview(file);
+        
+        const itemEl = document.createElement('div');
+        itemEl.className = 'file-preview-item';
+        itemEl.innerHTML = `
+            <div class="file-preview-icon">
+                ${previewUrl ? 
+                    `<img src="${previewUrl}" alt="${file.name}">` : 
+                    uploadService.getFileIcon(file.type)
+                }
+            </div>
+            <div class="file-preview-info">
+                <div class="file-preview-name">${escapeHtml(file.name)}</div>
+                <div class="file-preview-size">${uploadService.formatFileSize(file.size)}</div>
+            </div>
+            <button class="btn-remove-file" onclick="removeFile(${i})">✕</button>
+        `;
+        
+        previewList.appendChild(itemEl);
+    }
+}
+
+// Xóa file khỏi selection
+function removeFile(index) {
+    selectedFiles.splice(index, 1);
+    displayFilePreview();
+}
+
+// Clear toàn bộ file selection
+function clearFileSelection() {
+    selectedFiles = [];
+    displayFilePreview();
+}
+
 async function sendMessage() {
     const input = document.getElementById('messageInput');
     if (!input) return;
 
     const content = input.value.trim();
-    if (!content || !currentConversationId) return;
+    
+    // Phải có content hoặc file
+    if (!content && selectedFiles.length === 0) return;
+    if (!currentConversationId) return;
 
-    // Clear input ngay để UX tốt hơn
-    input.value = '';
-
-    // Optimistic UI: show immediately
-    const clientMessageId = generateUUID();
-    const userId = localStorage.getItem('userId');
-    const senderDisplayName = localStorage.getItem('userName') || 'User';
-    const optimisticPayload = {
-        messageId: `pending:${clientMessageId}`,
-        clientMessageId,
-        conversationId: currentConversationId,
-        senderId: userId,
-        senderDisplayName,
-        messageType: 'text',
-        content,
-        seq: null,
-        createdAt: new Date().toISOString()
-    };
-    if (typeof window.displayMessage === 'function') {
-        window.displayMessage(optimisticPayload);
-        const pendingEl = document.querySelector(`.message[data-client-id="${clientMessageId}"]`);
-        if (pendingEl) pendingEl.classList.add('pending');
+    // Khởi tạo UploadService an toàn
+    if (!uploadService) {
+        if (typeof UploadService !== 'function') {
+            showNotification('Không tải được chức năng upload (UploadService).', 'error');
+            return;
+        }
+        uploadService = new UploadService();
     }
 
     try {
-        await window.socketHandler.sendMessage(currentConversationId, content, 'text', clientMessageId);
+        const token = localStorage.getItem('token');
+
+        // Gửi tin nhắn
+        const clientMessageId = generateUUID();
+        const userId = localStorage.getItem('userId');
+        const senderDisplayName = localStorage.getItem('userName') || 'User';
+
+        // Nếu có file: tạo tin nhắn optimistic + upload resumable + progress
+        if (selectedFiles.length > 0) {
+            for (const file of selectedFiles) {
+                const fileClientId = generateUUID();
+
+                let messageType = 'file';
+                if (file.type.startsWith('image/')) messageType = 'image';
+                else if (file.type.startsWith('video/')) messageType = 'video';
+
+                const optimisticPayload = {
+                    messageId: `pending:${fileClientId}`,
+                    clientMessageId: fileClientId,
+                    conversationId: currentConversationId,
+                    senderId: userId,
+                    senderDisplayName,
+                    messageType,
+                    content: content || file.name,
+                    fileUrl: null,
+                    fileName: file.name,
+                    fileType: file.type,
+                    fileSize: file.size,
+                    uploadProgress: 0,
+                    uploadStatus: 'uploading',
+                    uploadStatusText: 'Đang gửi',
+                    seq: null,
+                    createdAt: new Date().toISOString()
+                };
+
+                if (typeof window.displayMessage === 'function') {
+                    window.displayMessage(optimisticPayload);
+                }
+
+                pendingUploads.set(fileClientId, {
+                    file,
+                    conversationId: currentConversationId,
+                    content: content || '',
+                    messageType,
+                    token,
+                    lastProgress: 0
+                });
+
+                try {
+                    const result = await uploadService.uploadResumable(
+                        file,
+                        token,
+                        (progress) => {
+                            const job = pendingUploads.get(fileClientId);
+                            if (job) job.lastProgress = progress;
+                            if (typeof window.updateUploadProgressUI === 'function') {
+                                window.updateUploadProgressUI(fileClientId, progress, 'Đang gửi');
+                            }
+                        },
+                        (state) => {
+                            if (state?.status === 'paused' && typeof window.updateUploadProgressUI === 'function') {
+                                const job = pendingUploads.get(fileClientId);
+                                window.updateUploadProgressUI(fileClientId, job?.lastProgress ?? 0, 'Tạm dừng');
+                            }
+                        }
+                    );
+
+                    await window.socketHandler.sendMessage(
+                        currentConversationId,
+                        content || '',
+                        messageType,
+                        fileClientId,
+                        result.url,
+                        file.name,
+                        file.type,
+                        file.size
+                    );
+
+                    pendingUploads.delete(fileClientId);
+                } catch (error) {
+                    console.error('Upload error:', error);
+                    const job = pendingUploads.get(fileClientId);
+                    if (typeof window.updateUploadProgressUI === 'function') {
+                        window.updateUploadProgressUI(fileClientId, job?.lastProgress ?? 0, 'Tạm dừng');
+                    }
+                    showNotification(`Upload tạm dừng: ${file.name}. Khi có mạng sẽ tự gửi tiếp.`, 'error');
+                }
+            }
+        } else {
+            // Tin nhắn text thông thường
+            const optimisticPayload = {
+                messageId: `pending:${clientMessageId}`,
+                clientMessageId,
+                conversationId: currentConversationId,
+                senderId: userId,
+                senderDisplayName,
+                messageType: 'text',
+                content,
+                seq: null,
+                createdAt: new Date().toISOString()
+            };
+            
+            if (typeof window.displayMessage === 'function') {
+                window.displayMessage(optimisticPayload);
+            }
+            
+            await window.socketHandler.sendMessage(currentConversationId, content, 'text', clientMessageId);
+        }
+
+        // Clear input
+        input.value = '';
+        clearFileSelection();
+        
         console.log('✅ Message sent');
     } catch (error) {
         console.error('❌ Send message error:', error);
         showNotification('Không thể gửi tin nhắn', 'error');
-        // Remove optimistic message if send fails
-        const pendingEl = document.querySelector(`.message[data-client-id="${clientMessageId}"]`);
-        if (pendingEl) pendingEl.remove();
-        input.value = content; // Restore nếu fail
     }
 }
+
 
 // ===== CREATE GROUP MODAL (Người 2) =====
 function openCreateGroupModal() {
