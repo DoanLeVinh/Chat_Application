@@ -25,6 +25,8 @@ namespace ChatServer.Database
         public IMongoCollection<Message> Messages => _database.GetCollection<Message>("messages");
         public IMongoCollection<Conversation> Conversations => _database.GetCollection<Conversation>("conversations");
         public IMongoCollection<ConversationMember> ConversationMembers => _database.GetCollection<ConversationMember>("conversation_members");
+        public IMongoCollection<MessageReaction> MessageReactions => _database.GetCollection<MessageReaction>("message_reactions");
+
 
         private void CreateIndexes()
         {
@@ -57,6 +59,22 @@ namespace ChatServer.Database
                 var userEmailIndexKeys = Builders<User>.IndexKeys.Ascending(u => u.Email);
                 var userEmailIndexOptions = new CreateIndexOptions { Unique = true };
                 Users.Indexes.CreateOne(new CreateIndexModel<User>(userEmailIndexKeys, userEmailIndexOptions));
+
+                // MessageReaction: Unique (messageId + userId + emoji)
+                var reactionIndexKeys = Builders<MessageReaction>.IndexKeys
+                    .Ascending(r => r.MessageId)
+                    .Ascending(r => r.UserId)
+                    .Ascending(r => r.Emoji);
+
+                var reactionIndexOptions = new CreateIndexOptions
+                {
+                    Unique = true
+                };
+
+                MessageReactions.Indexes.CreateOne(
+                    new CreateIndexModel<MessageReaction>(reactionIndexKeys, reactionIndexOptions)
+                );
+
 
                 Console.WriteLine("✅ Database indexes created");
             }

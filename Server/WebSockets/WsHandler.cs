@@ -1,6 +1,7 @@
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using ChatServer.Database;
 using ChatServer.Services;
 using ChatServer.WebSockets.Handlers;
 
@@ -8,11 +9,14 @@ namespace ChatServer.WebSockets
 {
     public static class WsHandler
     {
+
+
         public static async Task HandleWebSocketAsync(
             WebSocket webSocket,
             WsConnectionManager manager,
             ConversationService conversationService,
             MessageService messageService,
+            MongoDBContext db,
             UserService userService)
         {
             var buffer = new byte[1024 * 4];
@@ -145,6 +149,28 @@ namespace ChatServer.WebSockets
                                 response = await MessageHandlers.HandleGetMessagesAsync(wsMessage, userId, conversationService, messageService);
                             }
                             break;
+
+                        case "add_reaction":
+                            if (userId == null)
+                            {
+                                response = new WsResponse
+                                {
+                                    Type = "error",
+                                    Payload = new { error = "Not authenticated" }
+                                };
+                            }
+                            else
+                            {
+                                response = await ReactionHandlers.HandleAddReactionAsync(
+                                    wsMessage,
+                                    userId,
+                                    db,
+                                    conversationService,
+                                    manager
+                                );
+                            }
+                            break;
+
 
                         default:
                             response = new WsResponse
