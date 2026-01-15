@@ -2,6 +2,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using ChatServer.Database;
+using ChatServer.Models;
 using ChatServer.Services;
 using ChatServer.WebSockets.Handlers;
 
@@ -10,14 +11,13 @@ namespace ChatServer.WebSockets
     public static class WsHandler
     {
 
-
         public static async Task HandleWebSocketAsync(
             WebSocket webSocket,
             WsConnectionManager manager,
             ConversationService conversationService,
             MessageService messageService,
             MongoDBContext db,
-            UserService userService)
+            UserService userService, MongoDBContext _db1)
         {
             var buffer = new byte[1024 * 4];
             string? connectionId = null;
@@ -170,7 +170,13 @@ namespace ChatServer.WebSockets
                                 );
                             }
                             break;
+                        case "pin_message":
+                            response = await PinMessageHandlers.HandlePinAsync(wsMessage, db);
+                            break;
 
+                        case "unpin_message":
+                            response = await PinMessageHandlers.HandleUnpinAsync(wsMessage, db);
+                            break;
 
                         default:
                             response = new WsResponse
@@ -195,6 +201,18 @@ namespace ChatServer.WebSockets
                 }
             }
         }
+
+        private static async Task SendAsync(object ws, object value)
+        {
+            throw new NotImplementedException();
+        }
+
+
+        private static async Task BroadcastToRoom(string conversationId, object value)
+        {
+            throw new NotImplementedException();
+        }
+
 
         public static async Task SendMessageAsync(WebSocket webSocket, WsResponse response)
         {
@@ -231,4 +249,10 @@ namespace ChatServer.WebSockets
     {
         public string UserId { get; set; } = "";
     }
+    public class PinMessageEvent
+    {
+        public string ConversationId { get; set; } = "";
+        public string MessageId { get; set; } = "";
+    }
+
 }
