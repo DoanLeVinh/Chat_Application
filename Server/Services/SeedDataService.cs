@@ -34,7 +34,10 @@ namespace ChatServer.Services
                 {
                     new Sticker { Code = "thumb_up", ImageUrl = "/stickers/thumb.png" },
                     new Sticker { Code = "haha", ImageUrl = "/stickers/haha.png" },
-                    new Sticker { Code = "love", ImageUrl = "/stickers/love.png" }
+                    new Sticker { Code = "love", ImageUrl = "/stickers/love.png" },
+                    new Sticker { Code = "huhu", ImageUrl = "/stickers/huhu.png" },
+                    new Sticker { Code = "strong", ImageUrl = "/stickers/strong.png" },
+                    new Sticker { Code = "like", ImageUrl = "/stickers/like.png" }
                 });
             }
             // Kiểm tra đã có data chưa
