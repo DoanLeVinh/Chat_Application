@@ -27,7 +27,6 @@ namespace ChatServer.Database
         public IMongoCollection<ConversationMember> ConversationMembers => _database.GetCollection<ConversationMember>("conversation_members");
         public IMongoCollection<MessageReaction> MessageReactions => _database.GetCollection<MessageReaction>("message_reactions");
         public IMongoCollection<PinnedMessage> PinnedMessages => _database.GetCollection<PinnedMessage>("pinned_messages");
-        public IMongoCollection<Sticker> Stickers => _database.GetCollection<Sticker>("stickers");
 
 
         private void CreateIndexes()

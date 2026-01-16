@@ -12,13 +12,11 @@ namespace ChatServer.Services
     {
         private readonly IMongoCollection<Message> _messages;
         private readonly IMongoCollection<Conversation> _conversations;
-        private readonly MongoDBContext _dbContext;
 
         public MessageService(MongoDBContext dbContext)
         {
             _messages = dbContext.Messages;
             _conversations = dbContext.Conversations;
-            _dbContext = dbContext;
 
             // Tạo index
             CreateIndexes();
@@ -73,17 +71,6 @@ namespace ChatServer.Services
             {
                 throw new Exception("Conversation not found");
             }
-
-            if (type == "sticker")
-            {
-                var exists = await _dbContext.Stickers
-                    .Find(s => s.Code == content)
-                    .AnyAsync();
-
-                if (!exists)
-                    throw new Exception("Sticker not found");
-            }
-
 
             // Tạo message với seq mới
             var message = new Message
