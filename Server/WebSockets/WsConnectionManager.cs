@@ -93,5 +93,31 @@ namespace ChatServer.WebSockets
         {
             return _userConnections.ContainsKey(userId) && _userConnections[userId].Count > 0;
         }
+
+        /// <summary>
+        /// Lấy danh sách tất cả userId đang có kết nối WebSocket
+        /// </summary>
+        public List<string> GetAllOnlineUserIds()
+        {
+            return _userConnections.Keys.ToList();
+        }
+
+        /// <summary>
+        /// Broadcast đến tất cả users trừ một user cụ thể
+        /// </summary>
+        public async Task BroadcastToAllExceptAsync(string excludeUserId, object data)
+        {
+            var userIds = _userConnections.Keys.Where(id => id != excludeUserId).ToList();
+            await BroadcastToUsersAsync(userIds, data);
+        }
+
+        /// <summary>
+        /// Broadcast đến tất cả users đang online
+        /// </summary>
+        public async Task BroadcastToAllAsync(object data)
+        {
+            var userIds = _userConnections.Keys.ToList();
+            await BroadcastToUsersAsync(userIds, data);
+        }
     }
 }

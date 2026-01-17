@@ -1,5 +1,8 @@
 // ===== LOGIN/REGISTER HANDLING (Auth API) =====
-const API_URL = 'http://localhost:5000/api/auth';
+// Cấu hình SERVER_HOST cho LAN testing (sửa IP này thành IP máy chạy server)
+window.SERVER_HOST = 'localhost'; // Đổi thành '10.178.14.217' để test LAN
+
+const API_URL = `http://${window.SERVER_HOST}:5000/api/auth`;
 
 document.addEventListener('DOMContentLoaded', () => {
     if (window.location.pathname.includes('index.html') || window.location.pathname === '/') {
@@ -137,6 +140,7 @@ function initLoginPage() {
 // ===== CHAT PAGE INITIALIZATION =====
 let currentConversationId = null;
 let currentConversations = [];
+let onlineUsers = new Set(); // Track online users
 
 async function initChatPage() {
     // Check auth - dùng token thay vì userId
@@ -164,6 +168,9 @@ async function initChatPage() {
 
         // Setup WebSocket event handlers
         setupWebSocketHandlers();
+        
+        // Fetch initial online users
+        await fetchOnlineUsers();
         
         showNotification('Đã kết nối server', 'success');
     } catch (error) {
@@ -362,6 +369,29 @@ function setupWebSocketHandlers() {
             // TODO: Update member list in right panel
         }
     };
+
+    // Handle user online
+    window.onUserOnline = (payload) => {
+        console.log('📶 User online:', payload);
+        if (payload && payload.userId) {
+            onlineUsers.add(payload.userId);
+            updateOnlineIndicators();
+            // Show notification if not self
+            const currentUserId = localStorage.getItem('userId');
+            if (payload.userId !== currentUserId) {
+                showNotification(`${payload.displayName || payload.userId} đang online`, 'info');
+            }
+        }
+    };
+
+    // Handle user offline
+    window.onUserOffline = (payload) => {
+        console.log('📴 User offline:', payload);
+        if (payload && payload.userId) {
+            onlineUsers.delete(payload.userId);
+            updateOnlineIndicators();
+        }
+    };
 }
 
 // ===== CONVERSATION MANAGEMENT (Người 2) =====
@@ -412,10 +442,22 @@ function displayConversations(conversations) {
             conv.lastMessagePreview ||
             (conv.type === 'group' ? '👥 Nhóm chat' : 'Trò chuyện trực tiếp')
         );
+        
+        // Determine if other user is online (for direct chats)
+        let otherUserId = null;
+        const currentUserId = localStorage.getItem('userId');
+        if (conv.type === 'direct' && conv.members && conv.members.length === 2) {
+            const otherMember = conv.members.find(m => m.id !== currentUserId && m.id !== currentUserId);
+            otherUserId = otherMember?.id || conv.members.find(m => m.id !== currentUserId)?.id;
+        }
+        const isOnline = otherUserId && onlineUsers.has(otherUserId);
 
         return `
-        <div class="conversation-item" data-id="${conv.conversationId}" onclick="openConversation('${conv.conversationId}')">
-            <img src="assets/images/default-avatar.svg" alt="Avatar" class="avatar">
+        <div class="conversation-item" data-id="${conv.conversationId}" data-other-user="${otherUserId || ''}" onclick="openConversation('${conv.conversationId}')">
+            <div class="avatar-wrapper">
+                <img src="assets/images/default-avatar.svg" alt="Avatar" class="avatar">
+                ${conv.type === 'direct' ? `<span class="${isOnline ? 'online-indicator' : 'offline-indicator'}" data-user-status="${otherUserId || ''}"></span>` : ''}
+            </div>
             <div class="conversation-info">
                 <div class="conversation-header">
                     <span class="conversation-title">${title}</span>
@@ -428,6 +470,50 @@ function displayConversations(conversations) {
         </div>
     `}).join('');
     console.log('✅ HTML rendered, innerHTML length:', listElement.innerHTML.length);
+}
+
+// ===== ONLINE STATUS FUNCTIONS =====
+async function fetchOnlineUsers() {
+    try {
+        const users = await window.socketHandler.getOnlineUsers();
+        console.log('📶 Online users:', users);
+        onlineUsers.clear();
+        users.forEach(user => {
+            if (user && user.userId) {
+                onlineUsers.add(user.userId);
+            }
+        });
+        updateOnlineIndicators();
+    } catch (error) {
+        console.error('❌ Fetch online users error:', error);
+    }
+}
+
+function updateOnlineIndicators() {
+    // Update all online indicators in conversation list
+    document.querySelectorAll('[data-user-status]').forEach(indicator => {
+        const userId = indicator.getAttribute('data-user-status');
+        if (userId) {
+            const isOnline = onlineUsers.has(userId);
+            indicator.className = isOnline ? 'online-indicator' : 'offline-indicator';
+        }
+    });
+    
+    // Also update chat header if direct chat is open
+    if (currentConversationId) {
+        const currentConv = currentConversations.find(c => c.conversationId === currentConversationId);
+        if (currentConv && currentConv.type === 'direct') {
+            const currentUserId = localStorage.getItem('userId');
+            const otherUserId = currentConv.members?.find(m => m.id !== currentUserId)?.id;
+            if (otherUserId) {
+                const chatMembersEl = document.getElementById('chatMembers');
+                if (chatMembersEl) {
+                    const isOnline = onlineUsers.has(otherUserId);
+                    chatMembersEl.textContent = isOnline ? '🟢 Online' : '⚫ Offline';
+                }
+            }
+        }
+    }
 }
 
 async function openConversation(conversationId) {

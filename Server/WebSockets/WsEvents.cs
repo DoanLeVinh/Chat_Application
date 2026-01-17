@@ -78,11 +78,29 @@ namespace ChatServer.WebSockets
         public string AccessToken { get; set; } = string.Empty;
     }
 
-    // ===== Người 3: Resume/Presence Events (để tham khảo) =====
-    // TODO: Người 3 implement
+    // ===== Người 3: Resume/Presence Events =====
     public class ResumePayload
     {
         public Dictionary<string, long> SinceSeqByConversation { get; set; } = new();
+    }
+
+    // User presence/status events
+    public class UserStatusChangedPayload
+    {
+        public string UserId { get; set; } = string.Empty;
+        public string DisplayName { get; set; } = string.Empty;
+        public bool IsOnline { get; set; }
+        public DateTime? LastSeenAt { get; set; }
+    }
+
+    public class GetOnlineUsersPayload
+    {
+        public List<string> UserIds { get; set; } = new();
+    }
+
+    public class OnlineUsersResponsePayload
+    {
+        public List<UserStatusChangedPayload> Users { get; set; } = new();
     }
 
     // ===== Người 4: Reaction/Pin/Sticker (để tham khảo) =====

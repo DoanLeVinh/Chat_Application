@@ -30,6 +30,25 @@ namespace ChatServer.WebSockets
                         if (connectionId != null)
                         {
                             manager.RemoveConnection(connectionId);
+                            
+                            // Broadcast offline status if this was the last connection
+                            if (userId != null && !manager.IsUserOnline(userId))
+                            {
+                                await userService.SetOnlineStatusAsync(userId, false);
+                                var user = await userService.GetUserByIdAsync(userId);
+                                await manager.BroadcastToAllExceptAsync(userId, new WsResponse
+                                {
+                                    Type = "user_offline",
+                                    Payload = new UserStatusChangedPayload
+                                    {
+                                        UserId = userId,
+                                        DisplayName = user?.DisplayName ?? userId,
+                                        IsOnline = false,
+                                        LastSeenAt = DateTime.UtcNow
+                                    }
+                                });
+                                Console.WriteLine($"📴 User {userId} is now offline");
+                            }
                         }
                         await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closed by client", CancellationToken.None);
                         break;
@@ -59,14 +78,38 @@ namespace ChatServer.WebSockets
                             if (authPayload != null && !string.IsNullOrEmpty(authPayload.UserId))
                             {
                                 userId = authPayload.UserId;
+                                var wasOnline = manager.IsUserOnline(userId);
                                 connectionId = manager.AddConnection(webSocket, userId);
+                                
+                                // Get user info for display name
+                                var user = await userService.GetUserByIdAsync(userId);
+                                var displayName = user?.DisplayName ?? userId;
+                                
                                 response = new WsResponse
                                 {
                                     Type = "auth_ok",
                                     RequestId = wsMessage.RequestId,
-                                    Payload = new { userId, connectionId, displayName = authPayload.UserId }
+                                    Payload = new { userId, connectionId, displayName }
                                 };
-                                Console.WriteLine($"✅ User authenticated (mock): {userId}");
+                                
+                                // Set online status and broadcast if this is the first connection
+                                if (!wasOnline)
+                                {
+                                    await userService.SetOnlineStatusAsync(userId, true);
+                                    await manager.BroadcastToAllExceptAsync(userId, new WsResponse
+                                    {
+                                        Type = "user_online",
+                                        Payload = new UserStatusChangedPayload
+                                        {
+                                            UserId = userId,
+                                            DisplayName = displayName,
+                                            IsOnline = true,
+                                            LastSeenAt = null
+                                        }
+                                    });
+                                    Console.WriteLine($"📶 User {userId} is now online");
+                                }
+                                Console.WriteLine($"✅ User authenticated: {userId}");
                             }
                             else
                             {
@@ -146,6 +189,33 @@ namespace ChatServer.WebSockets
                             }
                             break;
 
+                        case "get_online_users":
+                            if (userId == null)
+                            {
+                                response = new WsResponse { Type = "error", RequestId = wsMessage.RequestId, Payload = new { error = "Not authenticated" } };
+                            }
+                            else
+                            {
+                                // Get all online users
+                                var onlineUserIds = manager.GetAllOnlineUserIds();
+                                var usersStatus = await userService.GetUsersStatusAsync(onlineUserIds);
+                                var onlineUsers = usersStatus.Values.Select(u => new UserStatusChangedPayload
+                                {
+                                    UserId = u.UserId,
+                                    DisplayName = u.DisplayName,
+                                    IsOnline = true,
+                                    LastSeenAt = u.LastSeenAt
+                                }).ToList();
+                                
+                                response = new WsResponse
+                                {
+                                    Type = "online_users",
+                                    RequestId = wsMessage.RequestId,
+                                    Payload = new OnlineUsersResponsePayload { Users = onlineUsers }
+                                };
+                            }
+                            break;
+
                         default:
                             response = new WsResponse
                             {
@@ -166,6 +236,24 @@ namespace ChatServer.WebSockets
                 if (connectionId != null)
                 {
                     manager.RemoveConnection(connectionId);
+                    
+                    // Broadcast offline status on error disconnect
+                    if (userId != null && !manager.IsUserOnline(userId))
+                    {
+                        await userService.SetOnlineStatusAsync(userId, false);
+                        var user = await userService.GetUserByIdAsync(userId);
+                        await manager.BroadcastToAllExceptAsync(userId, new WsResponse
+                        {
+                            Type = "user_offline",
+                            Payload = new UserStatusChangedPayload
+                            {
+                                UserId = userId,
+                                DisplayName = user?.DisplayName ?? userId,
+                                IsOnline = false,
+                                LastSeenAt = DateTime.UtcNow
+                            }
+                        });
+                    }
                 }
             }
         }

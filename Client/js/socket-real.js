@@ -12,8 +12,9 @@ class SocketHandler {
     connect(userId) {
         return new Promise((resolve, reject) => {
             try {
-                // Kết nối WebSocket thật
-                this.ws = new WebSocket('ws://localhost:5000/ws');
+                // Kết nối WebSocket - dùng IP của server (có thể sửa thành IP LAN)
+                const serverHost = window.SERVER_HOST || 'localhost';
+                this.ws = new WebSocket(`ws://${serverHost}:5000/ws`);
                 
                 this.ws.onopen = () => {
                     console.log('✅ WebSocket connected');
@@ -108,6 +109,12 @@ class SocketHandler {
                 break;
             case 'member_removed':
                 this.onMemberRemoved(message.payload);
+                break;
+            case 'user_online':
+                this.onUserOnline(message.payload);
+                break;
+            case 'user_offline':
+                this.onUserOffline(message.payload);
                 break;
             default:
                 console.log('Unhandled message type:', message.type);
@@ -212,6 +219,26 @@ class SocketHandler {
         if (window.onMemberRemoved) {
             window.onMemberRemoved(payload);
         }
+    }
+
+    onUserOnline(payload) {
+        console.log('📶 User online:', payload);
+        if (window.onUserOnline) {
+            window.onUserOnline(payload);
+        }
+    }
+
+    onUserOffline(payload) {
+        console.log('📴 User offline:', payload);
+        if (window.onUserOffline) {
+            window.onUserOffline(payload);
+        }
+    }
+
+    // Get online users
+    async getOnlineUsers() {
+        const response = await this.send('get_online_users', {});
+        return response.payload.users || [];
     }
 
     disconnect() {
