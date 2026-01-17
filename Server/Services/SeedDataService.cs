@@ -28,6 +28,18 @@ namespace ChatServer.Services
 
         public async Task SeedAsync()
         {
+            if (!await _dbContext.Stickers.Find(_ => true).AnyAsync())
+            {
+                await _dbContext.Stickers.InsertManyAsync(new[]
+                {
+                    new Sticker { Code = "thumb_up", ImageUrl = "/stickers/thumb.png" },
+                    new Sticker { Code = "haha", ImageUrl = "/stickers/haha.png" },
+                    new Sticker { Code = "love", ImageUrl = "/stickers/love.png" },
+                    new Sticker { Code = "huhu", ImageUrl = "/stickers/huhu.png" },
+                    new Sticker { Code = "strong", ImageUrl = "/stickers/strong.png" },
+                    new Sticker { Code = "like", ImageUrl = "/stickers/like.png" }
+                });
+            }
             // Kiểm tra đã có data chưa
             var userCount = await _dbContext.Users.CountDocumentsAsync(FilterDefinition<User>.Empty);
             if (userCount > 0)
@@ -145,6 +157,7 @@ namespace ChatServer.Services
                 "text",
                 Guid.NewGuid().ToString()
             );
+
 
             Console.WriteLine($"✅ Created 4 messages in group chat");
 

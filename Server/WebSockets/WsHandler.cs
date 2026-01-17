@@ -1,6 +1,8 @@
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using ChatServer.Database;
+using ChatServer.Models;
 using ChatServer.Services;
 using ChatServer.WebSockets.Handlers;
 
@@ -8,12 +10,14 @@ namespace ChatServer.WebSockets
 {
     public static class WsHandler
     {
+
         public static async Task HandleWebSocketAsync(
             WebSocket webSocket,
             WsConnectionManager manager,
             ConversationService conversationService,
             MessageService messageService,
-            UserService userService)
+            MongoDBContext db,
+            UserService userService, MongoDBContext _db1)
         {
             var buffer = new byte[1024 * 4];
             string? connectionId = null;
@@ -189,33 +193,6 @@ namespace ChatServer.WebSockets
                             }
                             break;
 
-                        case "get_online_users":
-                            if (userId == null)
-                            {
-                                response = new WsResponse { Type = "error", RequestId = wsMessage.RequestId, Payload = new { error = "Not authenticated" } };
-                            }
-                            else
-                            {
-                                // Get all online users
-                                var onlineUserIds = manager.GetAllOnlineUserIds();
-                                var usersStatus = await userService.GetUsersStatusAsync(onlineUserIds);
-                                var onlineUsers = usersStatus.Values.Select(u => new UserStatusChangedPayload
-                                {
-                                    UserId = u.UserId,
-                                    DisplayName = u.DisplayName,
-                                    IsOnline = true,
-                                    LastSeenAt = u.LastSeenAt
-                                }).ToList();
-                                
-                                response = new WsResponse
-                                {
-                                    Type = "online_users",
-                                    RequestId = wsMessage.RequestId,
-                                    Payload = new OnlineUsersResponsePayload { Users = onlineUsers }
-                                };
-                            }
-                            break;
-
                         default:
                             response = new WsResponse
                             {
@@ -258,6 +235,18 @@ namespace ChatServer.WebSockets
             }
         }
 
+        private static async Task SendAsync(object ws, object value)
+        {
+            throw new NotImplementedException();
+        }
+
+
+        private static async Task BroadcastToRoom(string conversationId, object value)
+        {
+            throw new NotImplementedException();
+        }
+
+
         public static async Task SendMessageAsync(WebSocket webSocket, WsResponse response)
         {
             if (webSocket.State != WebSocketState.Open) return;
@@ -293,4 +282,10 @@ namespace ChatServer.WebSockets
     {
         public string UserId { get; set; } = "";
     }
+    public class PinMessageEvent
+    {
+        public string ConversationId { get; set; } = "";
+        public string MessageId { get; set; } = "";
+    }
+
 }

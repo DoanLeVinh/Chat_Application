@@ -104,8 +104,10 @@ app.Map("/ws", async context =>
         var conversationService = context.RequestServices.GetRequiredService<ConversationService>();
         var messageService = context.RequestServices.GetRequiredService<MessageService>();
         var userService = context.RequestServices.GetRequiredService<UserService>();
-        
-        await WsHandler.HandleWebSocketAsync(webSocket, manager, conversationService, messageService, userService);
+        var db = context.RequestServices.GetRequiredService<MongoDBContext>();
+        var _db = context.RequestServices.GetRequiredService<MongoDBContext>();
+
+        await WsHandler.HandleWebSocketAsync(webSocket, manager, conversationService, messageService, db, userService, _db);
     }
     else
     {

@@ -248,7 +248,19 @@ class SocketHandler {
         }
         this.isConnected = false;
     }
+
 }
 
 // Global instance
 window.socketHandler = new SocketHandler();
+
+function reactMessage(conversationId, messageId, emoji) {
+  socket.send(JSON.stringify({
+    type: "add_reaction",
+    conversationId,
+    messageId,
+    emoji
+  }));
+}
+window.reactMessage = reactMessage;
+

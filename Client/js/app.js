@@ -952,3 +952,5 @@ function updateConversationLastMessage(conversationId, content) {
 }
 
 console.log('Chat Application loaded');
+
+
