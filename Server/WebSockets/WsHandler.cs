@@ -178,7 +178,7 @@ namespace ChatServer.WebSockets
                             }
                             else
                             {
-                                response = await ConversationHandlers.HandleGetConversationsAsync(wsMessage, userId, conversationService);
+                                response = await ConversationHandlers.HandleGetConversationsAsync(wsMessage, userId, conversationService, userService);
                             }
                             break;
 
@@ -189,7 +189,31 @@ namespace ChatServer.WebSockets
                             }
                             else
                             {
-                                response = await MessageHandlers.HandleGetMessagesAsync(wsMessage, userId, conversationService, messageService);
+                                response = await MessageHandlers.HandleGetMessagesAsync(wsMessage, userId, conversationService, messageService, userService);
+                            }
+                            break;
+
+                        case "get_online_users":
+                            if (userId == null)
+                            {
+                                response = new WsResponse { Type = "error", RequestId = wsMessage.RequestId, Payload = new { error = "Not authenticated" } };
+                            }
+                            else
+                            {
+                                var onlineUsers = await userService.GetAllOnlineUsersAsync();
+                                var onlineUserList = onlineUsers.Select(u => new
+                                {
+                                    userId = u.Id,
+                                    displayName = u.DisplayName,
+                                    isOnline = u.IsOnline,
+                                    lastSeenAt = u.LastSeenAt
+                                }).ToList();
+                                response = new WsResponse
+                                {
+                                    Type = "online_users",
+                                    RequestId = wsMessage.RequestId,
+                                    Payload = new { users = onlineUserList }
+                                };
                             }
                             break;
 

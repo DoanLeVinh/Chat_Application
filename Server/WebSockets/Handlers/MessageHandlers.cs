@@ -80,7 +80,8 @@ namespace ChatServer.WebSockets.Handlers
             WsMessage message,
             string userId,
             ConversationService conversationService,
-            MessageService messageService)
+            MessageService messageService,
+            UserService userService)
         {
             try
             {
@@ -103,6 +104,15 @@ namespace ChatServer.WebSockets.Handlers
                 // Lấy messages
                 var messages = await messageService.GetMessagesAsync(payload.ConversationId, payload.Limit ?? 50, payload.BeforeSeq);
 
+                // Lấy thông tin user cho tất cả senderIds
+                var senderIds = messages.Select(m => m.SenderId).Distinct().ToList();
+                var senderNames = new Dictionary<string, string>();
+                foreach (var senderId in senderIds)
+                {
+                    var user = await userService.GetUserByIdAsync(senderId);
+                    senderNames[senderId] = user?.DisplayName ?? senderId;
+                }
+
                 return new WsResponse
                 {
                     Type = "messages",
@@ -114,8 +124,10 @@ namespace ChatServer.WebSockets.Handlers
                         {
                             messageId = m.Id,
                             senderId = m.SenderId,
+                            senderDisplayName = senderNames.GetValueOrDefault(m.SenderId, m.SenderId),
                             messageType = m.Type,
                             content = m.Content,
+                            fileUrl = m.FileUrl,
                             seq = m.Seq,
                             createdAt = m.CreatedAt
                         }).ToList()

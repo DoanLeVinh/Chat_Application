@@ -6,6 +6,7 @@ namespace ChatServer.Models
     /// <summary>
     /// Message model với seq tăng dần theo conversation (Người 2)
     /// </summary>
+    [BsonIgnoreExtraElements]
     public class Message
     {
         [BsonId]
@@ -25,6 +26,12 @@ namespace ChatServer.Models
 
         [BsonElement("content")]
         public string Content { get; set; } = string.Empty;
+
+        /// <summary>
+        /// URL của file đính kèm (nếu có)
+        /// </summary>
+        [BsonElement("fileUrl")]
+        public string? FileUrl { get; set; }
 
         /// <summary>
         /// Client message ID để chống gửi trùng khi reconnect

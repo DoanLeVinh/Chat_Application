@@ -177,11 +177,56 @@ namespace ChatServer.WebSockets.Handlers
         public static async Task<WsResponse> HandleGetConversationsAsync(
             WsMessage message,
             string userId,
-            ConversationService conversationService)
+            ConversationService conversationService,
+            UserService userService)
         {
             try
             {
                 var conversations = await conversationService.GetUserConversationsAsync(userId);
+                
+                var conversationList = new List<object>();
+                foreach (var c in conversations)
+                {
+                    // Lấy members
+                    var members = await conversationService.GetMembersAsync(c.Id);
+                    
+                    // Xác định title cho direct chat
+                    string displayTitle = c.Title;
+                    if (c.Type == "direct")
+                    {
+                        // Tìm user còn lại (không phải current user)
+                        var otherMember = members.FirstOrDefault(m => m.UserId != userId);
+                        if (otherMember != null)
+                        {
+                            var otherUser = await userService.GetUserByIdAsync(otherMember.UserId);
+                            displayTitle = otherUser?.DisplayName ?? "User";
+                        }
+                    }
+                    
+                    // Lấy thông tin members với displayName
+                    var memberList = new List<object>();
+                    foreach (var m in members)
+                    {
+                        var user = await userService.GetUserByIdAsync(m.UserId);
+                        memberList.Add(new
+                        {
+                            id = m.UserId,
+                            displayName = user?.DisplayName ?? m.UserId,
+                            role = m.Role,
+                            joinedAt = m.JoinedAt
+                        });
+                    }
+                    
+                    conversationList.Add(new
+                    {
+                        conversationId = c.Id,
+                        title = displayTitle,
+                        type = c.Type,
+                        members = memberList,
+                        createdAt = c.CreatedAt,
+                        updatedAt = c.UpdatedAt
+                    });
+                }
 
                 return new WsResponse
                 {
@@ -189,14 +234,7 @@ namespace ChatServer.WebSockets.Handlers
                     RequestId = message.RequestId,
                     Payload = new
                     {
-                        conversations = conversations.Select(c => new
-                        {
-                            conversationId = c.Id,
-                            title = c.Title,
-                            type = c.Type,
-                            createdAt = c.CreatedAt,
-                            updatedAt = c.UpdatedAt
-                        }).ToList()
+                        conversations = conversationList
                     }
                 };
             }

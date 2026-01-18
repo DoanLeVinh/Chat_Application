@@ -106,6 +106,22 @@ namespace ChatServer.Services
             }
         }
 
+        /// <summary>
+        /// Lấy tất cả users đang online
+        /// </summary>
+        public async Task<List<User>> GetAllOnlineUsersAsync()
+        {
+            try
+            {
+                var filter = Builders<User>.Filter.Eq(u => u.IsOnline, true);
+                return await _context.Users.Find(filter).ToListAsync();
+            }
+            catch
+            {
+                return new List<User>();
+            }
+        }
+
         // TODO: Người 1 - Implement real auth (Register, Login with password hash, JWT token, etc.)
     }
 
