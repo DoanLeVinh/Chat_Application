@@ -1406,5 +1406,3 @@ function updateSelectedMembersUI() {
 }
 
 console.log('Chat Application loaded');
-
-

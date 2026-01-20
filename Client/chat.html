@@ -92,14 +92,18 @@
                     <!-- Messages will be loaded here -->
                 </div>
 
+
                 <!-- Message input -->
                 <div class="message-input-area">
+                    <div class="sticker-picker" id="stickerPicker" style="display:none;">
+                        <div class="sticker-grid" id="stickerGrid"></div>
+                    </div>
                     <input type="file" id="fileInput" class="file-input-hidden" accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.zip,.rar" multiple>
                     <label class="btn-icon btn-attachment" id="btnAttachment" for="fileInput" title="Chọn file">
                         ＋
                     </label>
-                    <button class="btn-icon" id="btnSticker" title="Sticker" disabled>
-                        😊 <small>(Người 4)</small>
+                    <button class="btn-icon" id="btnSticker" title="Sticker">
+                        😊
                     </button>
                     <input type="text" id="messageInput" placeholder="Nhập tin nhắn..." autocomplete="off">
                     <button class="btn-send" id="btnSend">
@@ -191,13 +195,6 @@
     <script src="js/socket-real.js?v=20260135"></script>
     <script src="js/ui.js?v=20260135"></script>
     <script src="js/app.js?v=20260135"></script>
-
-
-
-
-
-
-
 
 
 

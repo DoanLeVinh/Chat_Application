@@ -296,3 +296,23 @@ function reactMessage(conversationId, messageId, emoji) {
 }
 window.reactMessage = reactMessage;
 
+// PHẢI để ngoài cùng
+window.socket = new WebSocket("ws://localhost:5000/ws");
+
+function sendSticker(code) {
+    if (!currentConversationId) return;
+    if (socket.readyState !== WebSocket.OPEN) return;
+
+    socket.send(JSON.stringify({
+        type: "send_message",
+        payload: {
+            conversationId: currentConversationId,
+            messageType: "sticker",     // ✅ ĐÚNG
+            stickerCode: code,          // ✅ ĐÚNG
+            clientMessageId: "st_" + Date.now()
+        }
+    }));
+
+    document.getElementById("stickerPicker").style.display = "none";
+}
+
