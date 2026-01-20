@@ -14,7 +14,8 @@ namespace ChatServer.WebSockets.Handlers
             string userId,
             ConversationService conversationService,
             MessageService messageService,
-            WsConnectionManager connectionManager)
+            WsConnectionManager connectionManager,
+            UserService userService)
         {
             try
             {
@@ -43,11 +44,16 @@ namespace ChatServer.WebSockets.Handlers
                     payload.ClientMessageId ?? Guid.NewGuid().ToString()
                 );
 
+                // Lấy thông tin sender
+                var sender = await userService.GetUserByIdAsync(userId);
+                var senderDisplayName = sender?.DisplayName ?? userId;
+
                 var messageCreated = new
                 {
                     messageId = newMessage.Id,
                     conversationId = newMessage.ConversationId,
                     senderId = newMessage.SenderId,
+                    senderDisplayName = senderDisplayName,
                     messageType = newMessage.Type,
                     content = newMessage.Content,
                     seq = newMessage.Seq,

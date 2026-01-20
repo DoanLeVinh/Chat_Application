@@ -32,8 +32,10 @@ class SocketHandler {
                 };
 
                 this.ws.onmessage = (event) => {
+                    console.log('📨 Raw message:', event.data);
                     const message = JSON.parse(event.data);
-                    console.log('📨 Received:', message);
+                    console.log('📦 Parsed message:', message);
+                    console.log('📦 Message type:', message.type, 'Type:', message.Type);
                     this.handleMessage(message);
                 };
 
@@ -82,42 +84,52 @@ class SocketHandler {
     }
 
     handleMessage(message) {
-        // Xử lý response cho request
-        if (message.requestId && this.pendingRequests.has(message.requestId)) {
-            const { resolve, reject } = this.pendingRequests.get(message.requestId);
-            this.pendingRequests.delete(message.requestId);
+        // Normalize properties - backend might send PascalCase or camelCase
+        const normalizedMessage = {
+            type: message.type || message.Type,
+            requestId: message.requestId || message.RequestId,
+            payload: message.payload || message.Payload || {}
+        };
 
-            if (message.type === 'error' || message.type === 'auth_error') {
-                console.error('❌ Server error:', message.type, message.payload);
-                reject(new Error(message.payload.error || 'Unknown error'));
+        console.log('🔄 Normalized message:', normalizedMessage);
+
+        // Xử lý response cho request
+        if (normalizedMessage.requestId && this.pendingRequests.has(normalizedMessage.requestId)) {
+            const { resolve, reject } = this.pendingRequests.get(normalizedMessage.requestId);
+            this.pendingRequests.delete(normalizedMessage.requestId);
+
+            if (normalizedMessage.type === 'error' || normalizedMessage.type === 'auth_error') {
+                console.error('❌ Server error:', normalizedMessage.type, normalizedMessage.payload);
+                reject(new Error(normalizedMessage.payload.error || 'Unknown error'));
             } else {
-                resolve(message);
+                resolve(normalizedMessage);
             }
             return;
         }
 
         // Xử lý broadcast events
-        switch (message.type) {
+        switch (normalizedMessage.type) {
             case 'message_created':
-                this.onMessageCreated(message.payload);
+                console.log('✅ Calling onMessageCreated');
+                this.onMessageCreated(normalizedMessage.payload);
                 break;
             case 'conversation_created':
-                this.onConversationCreated(message.payload);
+                this.onConversationCreated(normalizedMessage.payload);
                 break;
             case 'member_added':
-                this.onMemberAdded(message.payload);
+                this.onMemberAdded(normalizedMessage.payload);
                 break;
             case 'member_removed':
-                this.onMemberRemoved(message.payload);
+                this.onMemberRemoved(normalizedMessage.payload);
                 break;
             case 'user_online':
-                this.onUserOnline(message.payload);
+                this.onUserOnline(normalizedMessage.payload);
                 break;
             case 'user_offline':
-                this.onUserOffline(message.payload);
+                this.onUserOffline(normalizedMessage.payload);
                 break;
             default:
-                console.log('Unhandled message type:', message.type);
+                console.log('Unhandled message type:', normalizedMessage.type);
         }
     }
 

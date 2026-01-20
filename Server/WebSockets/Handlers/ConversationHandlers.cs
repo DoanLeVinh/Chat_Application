@@ -9,6 +9,67 @@ namespace ChatServer.WebSockets.Handlers
     /// </summary>
     public static class ConversationHandlers
     {
+        /// <summary>
+        /// Handle create_direct - Tạo hoặc lấy direct conversation
+        /// </summary>
+        public static async Task<WsResponse> HandleCreateDirectAsync(
+            WsMessage message,
+            string userId,
+            ConversationService conversationService,
+            WsConnectionManager connectionManager,
+            UserService userService)
+        {
+            try
+            {
+                var payload = JsonSerializer.Deserialize<CreateDirectPayload>(
+                    message.Payload.ToString() ?? "{}",
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+                );
+                if (payload == null || string.IsNullOrEmpty(payload.OtherUserId))
+                {
+                    return new WsResponse { Type = "error", RequestId = message.RequestId, Payload = new { error = "Invalid payload" } };
+                }
+
+                // Dùng GetOrCreateDirectConversationAsync - tự động handle duplicate
+                var conversation = await conversationService.GetOrCreateDirectConversationAsync(userId, payload.OtherUserId);
+
+                // Lấy danh sách members
+                var members = await conversationService.GetMembersAsync(conversation.Id);
+                
+                // Lấy thông tin user để set title
+                var otherUser = await userService.GetUserByIdAsync(payload.OtherUserId);
+                var displayTitle = otherUser?.DisplayName ?? "User";
+
+                var directCreated = new
+                {
+                    conversationId = conversation.Id,
+                    title = displayTitle,
+                    type = conversation.Type,
+                    members = members.Select(m => new
+                    {
+                        userId = m.UserId,
+                        role = m.Role,
+                        joinedAt = m.JoinedAt
+                    }).ToList(),
+                    createdAt = conversation.CreatedAt
+                };
+
+                // Broadcast conversation_created tới cả 2 users
+                var memberIds = members.Select(m => m.UserId).ToList();
+                await connectionManager.BroadcastToUsersAsync(memberIds, new WsResponse
+                {
+                    Type = "conversation_created",
+                    Payload = directCreated
+                });
+
+                return new WsResponse { Type = "create_direct_ok", RequestId = message.RequestId, Payload = directCreated };
+            }
+            catch (Exception ex)
+            {
+                return new WsResponse { Type = "error", RequestId = message.RequestId, Payload = new { error = ex.Message } };
+            }
+        }
+
         public static async Task<WsResponse> HandleCreateGroupAsync(
             WsMessage message,
             string userId,
@@ -243,6 +304,11 @@ namespace ChatServer.WebSockets.Handlers
                 return new WsResponse { Type = "error", RequestId = message.RequestId, Payload = new { error = ex.Message } };
             }
         }
+    }
+
+    public class CreateDirectPayload
+    {
+        public string OtherUserId { get; set; } = "";
     }
 
     public class CreateGroupPayload

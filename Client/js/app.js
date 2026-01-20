@@ -242,6 +242,9 @@ function setupEventListeners() {
             // TODO: Filter conversations by tab
         });
     });
+
+    // Setup search box
+    setupSearchBox();
 }
 
 // ===== WEBSOCKET EVENT HANDLERS (Người 2) =====
@@ -249,10 +252,13 @@ function setupWebSocketHandlers() {
     // Handle incoming messages
     window.onMessageCreated = (payload) => {
         console.log('📨 Message received:', payload);
+        console.log('📍 Current conversation:', currentConversationId);
+        console.log('📍 Message conversation:', payload.conversationId);
 
         // If this is our own optimistic message, reconcile the pending UI element
         const currentUserId = localStorage.getItem('userId');
         if (payload && payload.clientMessageId && payload.senderId === currentUserId) {
+            console.log('🔄 Reconciling optimistic message:', payload.clientMessageId);
             const pendingEl = document.querySelector(`.message[data-client-id="${payload.clientMessageId}"]`);
             if (pendingEl) {
                 pendingEl.dataset.id = payload.messageId;
@@ -319,22 +325,31 @@ function setupWebSocketHandlers() {
                         }
                     }
                 }
+                console.log('✅ Optimistic message reconciled');
+                return; // Important: return early for our own messages
             }
         }
         
-        // Nếu đang mở conversation này, hiển thị message
+        // Nếu đang mở conversation này, hiển thị message từ người khác
         if (payload.conversationId === currentConversationId) {
+            console.log('✅ Same conversation, displaying message');
             // ui.js expects a single argument
             if (typeof window.displayMessage === 'function') {
                 // Avoid duplicate if we already rendered optimistic version
                 if (payload.clientMessageId) {
                     const alreadyRendered = document.querySelector(`.message[data-client-id="${payload.clientMessageId}"]`);
                     if (alreadyRendered) {
+                        console.log('⚠️ Message already rendered (optimistic)');
                         return;
                     }
                 }
+                console.log('📝 Calling displayMessage...');
                 window.displayMessage(payload);
+            } else {
+                console.error('❌ window.displayMessage not found!');
             }
+        } else {
+            console.log('⚠️ Different conversation, not displaying');
         }
         
         // Update conversation list
@@ -874,6 +889,14 @@ function openCreateGroupModal() {
     modal.classList.add('show');
     modal.style.display = 'flex';
 
+    // Reset form
+    document.getElementById('groupNameInput').value = '';
+    selectedMembers = [];
+    updateSelectedMembersUI();
+
+    // Setup member search
+    setupMemberSearch();
+
     // Close handlers
     document.getElementById('closeGroupModal')?.addEventListener('click', closeCreateGroupModal);
     document.getElementById('cancelGroupModal')?.addEventListener('click', closeCreateGroupModal);
@@ -894,31 +917,33 @@ function closeCreateGroupModal() {
 function createGroup() {
     const groupName = document.getElementById('groupNameInput').value.trim();
     if (!groupName) {
-        alert('Vui lòng nhập tên nhóm');
+        showNotification('Vui lòng nhập tên nhóm', 'error');
         return;
     }
 
-    // TODO: Người 2 - Send create_group via WebSocket
-    // TODO: Người 4 - Search users để add members
+    if (selectedMembers.length === 0) {
+        showNotification('Vui lòng chọn ít nhất 1 thành viên', 'error');
+        return;
+    }
+
+    console.log('👥 Creating group:', groupName, 'with members:', selectedMembers);
+
+    // Send create_group via WebSocket
+    const currentUserId = localStorage.getItem('userId');
+    const memberIds = [currentUserId, ...selectedMembers.map(m => m.id)];
     
-    console.log('Creating group:', groupName);
-    
-    // Mock: Add to conversation list
-    const newConv = {
-        id: 'conv-' + Date.now(),
-        type: 'group',
-        title: groupName,
-        avatarUrl: null,
-        lastMessage: '',
-        lastMessageTime: 'Vừa xong',
-        unreadCount: 0
-    };
-    
-    currentConversations.unshift(newConv);
-    displayConversations(currentConversations); // Fixed: use displayConversations instead of renderConversationList
-    closeCreateGroupModal();
-    
-    alert('Đã tạo nhóm "' + groupName + '"');
+    // Use createGroup instead of createConversation
+    window.socketHandler.createGroup(groupName, memberIds)
+        .then((result) => {
+            console.log('✅ Group created:', result);
+            showNotification('Đã tạo nhóm thành công', 'success');
+            closeCreateGroupModal();
+            loadConversations();
+        })
+        .catch(error => {
+            console.error('❌ Create group error:', error);
+            showNotification('Không thể tạo nhóm', 'error');
+        });
 }
 
 // ===== UTILITY FUNCTIONS =====
@@ -949,6 +974,328 @@ function updateConversationLastMessage(conversationId, content) {
         conv.updatedAt = new Date().toISOString();
         displayConversations(currentConversations);
     }
+}
+
+// Note: showNotification is defined in ui.js
+
+// ===== USER SEARCH FUNCTIONS =====
+let searchTimeout = null;
+let selectedMembers = [];
+
+// Debounce function
+function debounce(func, delay) {
+    return function(...args) {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => func.apply(this, args), delay);
+    };
+}
+
+// Search users via API
+async function searchUsers(query) {
+    if (!query || query.trim().length < 2) {
+        return [];
+    }
+
+    try {
+        const url = `http://${window.SERVER_HOST}:5000/api/users/search?q=${encodeURIComponent(query)}&limit=10`;
+        console.log('🌐 Calling API:', url);
+        
+        const response = await fetch(url);
+        console.log('📡 API response status:', response.status);
+        
+        if (!response.ok) {
+            throw new Error('Search failed');
+        }
+        const users = await response.json();
+        console.log('👥 Users found:', users.length);
+        return users || [];
+    } catch (error) {
+        console.error('❌ Search error:', error);
+        return [];
+    }
+}
+
+// Setup search box in sidebar
+function setupSearchBox() {
+    const searchInput = document.getElementById('searchInput');
+    const searchResults = document.getElementById('searchResults');
+    const btnSearch = document.getElementById('btnSearch');
+    
+    console.log('🔍 Setup search box:', { searchInput: !!searchInput, searchResults: !!searchResults, btnSearch: !!btnSearch });
+    
+    if (!searchInput || !searchResults) {
+        console.error('❌ Search box elements not found!');
+        return;
+    }
+
+    // Handle search function
+    const performSearch = async () => {
+        const query = searchInput.value.trim();
+        console.log('🔍 Performing search for:', query);
+        
+        if (query.length < 2) {
+            console.log('⚠️ Query too short, hiding results');
+            searchResults.classList.remove('show');
+            return;
+        }
+
+        // Show loading
+        searchResults.innerHTML = '<div class="search-loading">Đang tìm kiếm...</div>';
+        searchResults.classList.add('show');
+        console.log('⏳ Showing loading state');
+
+        // Search users
+        const users = await searchUsers(query);
+        console.log('✅ Search results:', users);
+        displaySearchResults(users);
+    };
+
+    // Handle search input with debounce
+    const handleSearch = debounce(performSearch, 300);
+
+    searchInput.addEventListener('input', handleSearch);
+    console.log('✅ Input event listener added');
+
+    // Search button click
+    if (btnSearch) {
+        btnSearch.addEventListener('click', (e) => {
+            console.log('🖱️ Search button clicked');
+            e.preventDefault();
+            e.stopPropagation();
+            performSearch();
+        });
+        console.log('✅ Button click listener added');
+    }
+
+    // Enter key to search
+    searchInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            console.log('⌨️ Enter key pressed');
+            e.preventDefault();
+            performSearch();
+        }
+    });
+    console.log('✅ Enter key listener added');
+
+    // Close search results when clicking outside
+    document.addEventListener('click', (e) => {
+        if (!searchInput.contains(e.target) && !searchResults.contains(e.target) && !btnSearch?.contains(e.target)) {
+            searchResults.classList.remove('show');
+        }
+    });
+
+    // Show results when focusing search input (if there's content)
+    searchInput.addEventListener('focus', () => {
+        if (searchInput.value.trim().length >= 2 && searchResults.innerHTML) {
+            searchResults.classList.add('show');
+        }
+    });
+}
+
+// Display search results
+function displaySearchResults(users) {
+    const searchResults = document.getElementById('searchResults');
+    if (!searchResults) return;
+
+    const currentUserId = localStorage.getItem('userId');
+
+    if (users.length === 0) {
+        searchResults.innerHTML = '<div class="search-no-results">Không tìm thấy người dùng</div>';
+        return;
+    }
+
+    // Filter out current user
+    const filteredUsers = users.filter(u => u.id !== currentUserId);
+
+    if (filteredUsers.length === 0) {
+        searchResults.innerHTML = '<div class="search-no-results">Không tìm thấy người dùng khác</div>';
+        return;
+    }
+
+    searchResults.innerHTML = filteredUsers.map(user => `
+        <div class="search-result-item" onclick="createOrOpenDirectChat('${user.id}', '${escapeHtml(user.displayName)}')">
+            <div class="avatar-wrapper">
+                <img src="${user.avatarUrl || 'assets/images/default-avatar.svg'}" alt="Avatar" class="avatar">
+                ${user.isOnline ? '<span class="online-indicator"></span>' : '<span class="offline-indicator"></span>'}
+            </div>
+            <div class="user-info">
+                <span class="user-name">${escapeHtml(user.displayName)}</span>
+                <span class="user-status">${user.isOnline ? '🟢 Online' : '⚫ Offline'}</span>
+            </div>
+        </div>
+    `).join('');
+}
+
+// Create or open direct chat
+async function createOrOpenDirectChat(otherUserId, otherUserName) {
+    const searchInput = document.getElementById('searchInput');
+    const searchResults = document.getElementById('searchResults');
+    
+    console.log('💬 Creating/opening direct chat with:', otherUserId, otherUserName);
+    
+    // Hide search results
+    if (searchResults) searchResults.classList.remove('show');
+    if (searchInput) searchInput.value = '';
+
+    const currentUserId = localStorage.getItem('userId');
+
+    // Check if conversation already exists
+    const existingConv = currentConversations.find(conv => 
+        conv.type === 'direct' && 
+        conv.members && 
+        conv.members.some(m => m.id === otherUserId)
+    );
+
+    if (existingConv) {
+        // Open existing conversation
+        console.log('✅ Found existing conversation:', existingConv.conversationId);
+        openConversation(existingConv.conversationId);
+        showNotification(`Đã mở chat với ${otherUserName}`, 'success');
+        return;
+    }
+
+    // Create new direct conversation
+    try {
+        console.log('🆕 Creating new direct chat with:', otherUserId);
+        
+        // Use createDirect instead of createConversation
+        const result = await window.socketHandler.createDirect(otherUserId);
+        console.log('✅ Created conversation:', result);
+        
+        showNotification(`Đã tạo chat với ${otherUserName}`, 'success');
+        
+        // Reload conversations
+        await loadConversations();
+        
+        // Open the new conversation
+        const newConv = currentConversations.find(conv => 
+            conv.type === 'direct' && 
+            conv.members && 
+            conv.members.some(m => m.id === otherUserId)
+        );
+        
+        if (newConv) {
+            console.log('✅ Opening new conversation:', newConv.conversationId);
+            openConversation(newConv.conversationId);
+        }
+    } catch (error) {
+        console.error('❌ Create conversation error:', error);
+        showNotification('Không thể tạo cuộc trò chuyện', 'error');
+    }
+}
+
+// Setup member search in create group modal
+function setupMemberSearch() {
+    const memberSearchInput = document.getElementById('memberSearchInput');
+    const memberSearchResults = document.getElementById('memberSearchResults');
+    
+    if (!memberSearchInput || !memberSearchResults) return;
+
+    // Handle search input with debounce
+    const handleMemberSearch = debounce(async () => {
+        const query = memberSearchInput.value.trim();
+        
+        if (query.length < 2) {
+            memberSearchResults.innerHTML = '<div class="member-search-empty">Nhập tên hoặc email để tìm kiếm</div>';
+            return;
+        }
+
+        // Show loading
+        memberSearchResults.innerHTML = '<div class="member-search-empty">Đang tìm kiếm...</div>';
+
+        // Search users
+        const users = await searchUsers(query);
+        displayMemberSearchResults(users);
+    }, 300);
+
+    memberSearchInput.addEventListener('input', handleMemberSearch);
+}
+
+// Display member search results in modal
+function displayMemberSearchResults(users) {
+    const memberSearchResults = document.getElementById('memberSearchResults');
+    if (!memberSearchResults) return;
+
+    const currentUserId = localStorage.getItem('userId');
+
+    if (users.length === 0) {
+        memberSearchResults.innerHTML = '<div class="member-search-empty">Không tìm thấy người dùng</div>';
+        return;
+    }
+
+    // Filter out current user
+    const filteredUsers = users.filter(u => u.id !== currentUserId);
+
+    if (filteredUsers.length === 0) {
+        memberSearchResults.innerHTML = '<div class="member-search-empty">Không tìm thấy người dùng khác</div>';
+        return;
+    }
+
+    memberSearchResults.innerHTML = filteredUsers.map(user => {
+        const isSelected = selectedMembers.some(m => m.id === user.id);
+        return `
+            <div class="member-search-item" onclick="toggleMemberSelection('${user.id}', '${escapeHtml(user.displayName)}', '${user.avatarUrl || 'assets/images/default-avatar.svg'}')">
+                <input type="checkbox" ${isSelected ? 'checked' : ''} onclick="event.stopPropagation(); toggleMemberSelection('${user.id}', '${escapeHtml(user.displayName)}', '${user.avatarUrl || 'assets/images/default-avatar.svg'}')">
+                <img src="${user.avatarUrl || 'assets/images/default-avatar.svg'}" alt="Avatar" class="avatar">
+                <div class="member-info">
+                    <span class="member-name">${escapeHtml(user.displayName)}</span>
+                    <span class="member-status">${user.isOnline ? '🟢 Online' : '⚫ Offline'}</span>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+// Toggle member selection
+function toggleMemberSelection(userId, displayName, avatarUrl) {
+    const index = selectedMembers.findIndex(m => m.id === userId);
+    
+    if (index >= 0) {
+        // Remove from selection
+        selectedMembers.splice(index, 1);
+    } else {
+        // Add to selection
+        selectedMembers.push({ id: userId, displayName, avatarUrl });
+    }
+    
+    updateSelectedMembersUI();
+    
+    // Update checkbox state
+    const memberSearchResults = document.getElementById('memberSearchResults');
+    if (memberSearchResults) {
+        const checkboxes = memberSearchResults.querySelectorAll('input[type="checkbox"]');
+        checkboxes.forEach(cb => {
+            const item = cb.closest('.member-search-item');
+            if (item) {
+                const itemUserId = item.getAttribute('onclick').match(/'([^']+)'/)[1];
+                cb.checked = selectedMembers.some(m => m.id === itemUserId);
+            }
+        });
+    }
+}
+
+// Update selected members UI
+function updateSelectedMembersUI() {
+    const container = document.getElementById('selectedMembersContainer');
+    const list = document.getElementById('selectedMembersList');
+    const count = document.getElementById('selectedCount');
+    
+    if (!container || !list || !count) return;
+
+    if (selectedMembers.length === 0) {
+        container.style.display = 'none';
+        return;
+    }
+
+    container.style.display = 'block';
+    count.textContent = selectedMembers.length;
+
+    list.innerHTML = selectedMembers.map(member => `
+        <div class="selected-member-tag">
+            <span>${escapeHtml(member.displayName)}</span>
+            <button class="remove-btn" onclick="toggleMemberSelection('${member.id}', '${escapeHtml(member.displayName)}', '${member.avatarUrl}')">✕</button>
+        </div>
+    `).join('');
 }
 
 console.log('Chat Application loaded');

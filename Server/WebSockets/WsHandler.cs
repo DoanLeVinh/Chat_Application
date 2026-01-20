@@ -134,7 +134,18 @@ namespace ChatServer.WebSockets
                             }
                             else
                             {
-                                response = await MessageHandlers.HandleSendMessageAsync(wsMessage, userId, conversationService, messageService, manager);
+                                response = await MessageHandlers.HandleSendMessageAsync(wsMessage, userId, conversationService, messageService, manager, userService);
+                            }
+                            break;
+
+                        case "create_direct":
+                            if (userId == null)
+                            {
+                                response = new WsResponse { Type = "error", RequestId = wsMessage.RequestId, Payload = new { error = "Not authenticated" } };
+                            }
+                            else
+                            {
+                                response = await ConversationHandlers.HandleCreateDirectAsync(wsMessage, userId, conversationService, manager, userService);
                             }
                             break;
 
