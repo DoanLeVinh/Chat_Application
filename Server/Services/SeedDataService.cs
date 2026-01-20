@@ -13,34 +13,27 @@ namespace ChatServer.Services
         private readonly UserService _userService;
         private readonly ConversationService _conversationService;
         private readonly MessageService _messageService;
+        private readonly IWebHostEnvironment _env;
 
         public SeedDataService(
             MongoDBContext dbContext,
             UserService userService,
             ConversationService conversationService,
-            MessageService messageService)
+            MessageService messageService,
+            IWebHostEnvironment env)
         {
             _dbContext = dbContext;
             _userService = userService;
             _conversationService = conversationService;
             _messageService = messageService;
+            _env = env;
         }
 
         public async Task SeedAsync()
         {
-            if (!await _dbContext.Stickers.Find(_ => true).AnyAsync())
-            {
-                await _dbContext.Stickers.InsertManyAsync(new[]
-                {
-                    new Sticker { Code = "thumb_up", ImageUrl = "/stickers/thumb.png" },
-                    new Sticker { Code = "haha", ImageUrl = "/stickers/haha.png" },
-                    new Sticker { Code = "love", ImageUrl = "/stickers/love.png" },
-                    new Sticker { Code = "huhu", ImageUrl = "/stickers/huhu.png" },
-                    new Sticker { Code = "strong", ImageUrl = "/stickers/strong.png" },
-                    new Sticker { Code = "like", ImageUrl = "/stickers/like.png" }
-                });
-            }
-            // Kiểm tra đã có data chưa
+            await SeedStickersAsync();
+
+            // Nếu đã có user thì skip seed demo
             var userCount = await _dbContext.Users.CountDocumentsAsync(FilterDefinition<User>.Empty);
             if (userCount > 0)
             {
@@ -50,12 +43,12 @@ namespace ChatServer.Services
 
             Console.WriteLine("🌱 Seeding database...");
 
-            // Tạo demo users
+            // ================= USERS =================
             var user1 = new User
             {
                 Email = "vinh@demo.com",
                 DisplayName = "Doãn Vịnh",
-                PasswordHash = "demo123", // TODO: Người 1 sẽ hash password
+                PasswordHash = "demo123",
                 CreatedAt = DateTime.UtcNow
             };
 
@@ -84,13 +77,12 @@ namespace ChatServer.Services
             };
 
             await _dbContext.Users.InsertManyAsync(new[] { user1, user2, user3, user4 });
-            Console.WriteLine($"✅ Created 4 demo users");
+            Console.WriteLine("✅ Created 4 demo users");
 
-            // Tạo direct conversation giữa Vịnh và Quang
-            var directConv = await _conversationService.GetOrCreateDirectConversationAsync(user1.Id, user2.Id);
-            Console.WriteLine($"✅ Created direct conversation: {directConv.Id}");
+            // ================= DIRECT CHAT =================
+            var directConv = await _conversationService
+                .GetOrCreateDirectConversationAsync(user1.Id, user2.Id);
 
-            // Tạo messages trong direct chat
             await _messageService.CreateMessageAsync(
                 directConv.Id,
                 user1.Id,
@@ -115,17 +107,15 @@ namespace ChatServer.Services
                 Guid.NewGuid().ToString()
             );
 
-            Console.WriteLine($"✅ Created 3 messages in direct chat");
+            Console.WriteLine("✅ Created direct conversation messages");
 
-            // Tạo group conversation
+            // ================= GROUP CHAT =================
             var groupConv = await _conversationService.CreateGroupConversationAsync(
                 user1.Id,
                 "Nhóm Chat App LTM",
                 new List<string> { user2.Id, user3.Id, user4.Id }
             );
-            Console.WriteLine($"✅ Created group conversation: {groupConv.Id}");
 
-            // Tạo messages trong group
             await _messageService.CreateMessageAsync(
                 groupConv.Id,
                 user1.Id,
@@ -158,17 +148,57 @@ namespace ChatServer.Services
                 Guid.NewGuid().ToString()
             );
 
-
-            Console.WriteLine($"✅ Created 4 messages in group chat");
-
             Console.WriteLine("🎉 Seed completed successfully!");
-            Console.WriteLine();
-            Console.WriteLine("📝 Demo accounts:");
-            Console.WriteLine($"   1. Email: vinh@demo.com | Password: demo123 | UserId: {user1.Id}");
-            Console.WriteLine($"   2. Email: quang@demo.com | Password: demo123 | UserId: {user2.Id}");
-            Console.WriteLine($"   3. Email: huyen@demo.com | Password: demo123 | UserId: {user3.Id}");
-            Console.WriteLine($"   4. Email: suong@demo.com | Password: demo123 | UserId: {user4.Id}");
-            Console.WriteLine();
         }
+
+        /// <summary>
+        /// AUTO seed stickers từ folder wwwroot/stickers
+        /// </summary>
+        private async Task SeedStickersAsync()
+        {
+            var webRoot = _env.WebRootPath;
+
+            if (string.IsNullOrEmpty(webRoot))
+            {
+                Console.WriteLine("⚠️ WebRootPath is null. Ensure wwwroot exists & UseStaticFiles() is enabled.");
+                return;
+            }
+
+            var stickerPath = Path.Combine(webRoot, "stickers");
+
+            if (!Directory.Exists(stickerPath))
+            {
+                Console.WriteLine("⚠️ Sticker folder not found, skipping sticker seed");
+                return;
+            }
+
+            var files = Directory.GetFiles(stickerPath);
+
+            int count = 0;
+
+            foreach (var file in files)
+            {
+                var fileName = Path.GetFileName(file);
+                var code = Path.GetFileNameWithoutExtension(fileName);
+                var imageUrl = $"/stickers/{fileName}";
+
+                var exists = await _dbContext.Stickers
+                    .Find(s => s.Code == code)
+                    .AnyAsync();
+
+                if (!exists)
+                {
+                    await _dbContext.Stickers.InsertOneAsync(new Sticker
+                    {
+                        Code = code,
+                        ImageUrl = imageUrl
+                    });
+                    count++;
+                }
+            }
+
+            Console.WriteLine($"🖼️ Seeded {count} stickers");
+        }
+
     }
 }

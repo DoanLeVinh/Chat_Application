@@ -177,3 +177,40 @@ window.addEventListener('load', () => {
         // window.location.href = 'chat.html';
     }
 });
+
+
+let stickerMap = {};
+let stickerList = [];
+
+async function loadStickers() {
+    const res = await fetch("http://localhost:5000/api/stickers");
+    const data = await res.json();
+
+    stickerList = data;
+    stickerMap = {};
+
+    data.forEach(s => {
+        stickerMap[s.code] = s;
+    });
+
+    renderStickerPicker(stickerList); // ✅ ĐÚNG
+}
+
+
+function renderStickerPicker(stickers) {
+    const container = document.getElementById("stickerPicker");
+    container.innerHTML = "";
+
+    stickers.forEach(sticker => {
+        const img = document.createElement("img");
+        img.src = "http://localhost:5000" + sticker.imageUrl;
+        img.className = "sticker-item";
+
+        img.onclick = () => {
+            sendSticker(sticker.code);
+        };
+
+        container.appendChild(img);
+    });
+}
+

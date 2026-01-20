@@ -362,3 +362,34 @@ style.textContent = `
     }
 `;
 document.head.appendChild(style);
+
+const btnSticker = document.getElementById("btnSticker");
+const stickerPicker = document.getElementById("stickerPicker");
+
+btnSticker.disabled = false;
+
+btnSticker.onclick = () => {
+    stickerPicker.style.display =
+        stickerPicker.style.display === "none" ? "block" : "none";
+};
+async function loadStickers() {
+    const res = await fetch("http://localhost:5000/api/stickers");
+    const stickers = await res.json();
+
+    const grid = document.getElementById("stickerGrid");
+    grid.innerHTML = "";
+
+    stickers.forEach(sticker => {
+        const img = document.createElement("img");
+
+        img.src = "http://localhost:5000" + sticker.imageUrl; // ✅ QUAN TRỌNG
+        img.title = sticker.code;
+        img.className = "sticker-item";
+
+        img.onclick = () => sendSticker(sticker.code);
+
+        grid.appendChild(img);
+    });
+}
+
+loadStickers();
