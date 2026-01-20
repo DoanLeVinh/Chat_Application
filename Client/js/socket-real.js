@@ -123,9 +123,11 @@ class SocketHandler {
                 this.onMemberRemoved(normalizedMessage.payload);
                 break;
             case 'user_online':
+                console.log('✅ Received user_online event:', normalizedMessage.payload);
                 this.onUserOnline(normalizedMessage.payload);
                 break;
             case 'user_offline':
+                console.log('✅ Received user_offline event:', normalizedMessage.payload);
                 this.onUserOffline(normalizedMessage.payload);
                 break;
             default:
@@ -234,16 +236,34 @@ class SocketHandler {
     }
 
     onUserOnline(payload) {
-        console.log('📶 User online:', payload);
+        // Normalize payload properties (backend sends PascalCase)
+        const normalizedPayload = {
+            userId: payload.userId || payload.UserId,
+            displayName: payload.displayName || payload.DisplayName,
+            isOnline: payload.isOnline !== undefined ? payload.isOnline : payload.IsOnline,
+            lastSeenAt: payload.lastSeenAt || payload.LastSeenAt
+        };
+        
+        console.log('🔄 Normalized user online payload:', normalizedPayload);
+        
         if (window.onUserOnline) {
-            window.onUserOnline(payload);
+            window.onUserOnline(normalizedPayload);
         }
     }
 
     onUserOffline(payload) {
-        console.log('📴 User offline:', payload);
+        // Normalize payload properties (backend sends PascalCase)
+        const normalizedPayload = {
+            userId: payload.userId || payload.UserId,
+            displayName: payload.displayName || payload.DisplayName,
+            isOnline: payload.isOnline !== undefined ? payload.isOnline : payload.IsOnline,
+            lastSeenAt: payload.lastSeenAt || payload.LastSeenAt
+        };
+        
+        console.log('🔄 Normalized user offline payload:', normalizedPayload);
+        
         if (window.onUserOffline) {
-            window.onUserOffline(payload);
+            window.onUserOffline(normalizedPayload);
         }
     }
 

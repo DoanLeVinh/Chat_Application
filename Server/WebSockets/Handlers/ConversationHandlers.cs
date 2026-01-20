@@ -264,7 +264,7 @@ namespace ChatServer.WebSockets.Handlers
                         }
                     }
                     
-                    // Lấy thông tin members với displayName
+                    // Lấy thông tin members với displayName, online status và lastSeenAt
                     var memberList = new List<object>();
                     foreach (var m in members)
                     {
@@ -274,7 +274,9 @@ namespace ChatServer.WebSockets.Handlers
                             id = m.UserId,
                             displayName = user?.DisplayName ?? m.UserId,
                             role = m.Role,
-                            joinedAt = m.JoinedAt
+                            joinedAt = m.JoinedAt,
+                            isOnline = user?.IsOnline ?? false,
+                            lastSeenAt = user?.LastSeenAt
                         });
                     }
                     
