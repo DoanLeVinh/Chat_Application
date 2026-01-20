@@ -137,10 +137,13 @@ function initLoginPage() {
 }
 
 
-// ===== CHAT PAGE INITIALIZATION =====
+// ===== CHAT PAGE INITIALIZATION// Global state
 let currentConversationId = null;
 let currentConversations = [];
-let onlineUsers = new Set(); // Track online users
+let onlineUsers = new Set();
+let userLastSeen = new Map(); // Store last seen timestamps for offline users
+
+// ===== INITIALIZATION (Người 1) =====users
 
 async function initChatPage() {
     // Check auth - dùng token thay vì userId
@@ -164,13 +167,14 @@ async function initChatPage() {
         console.log('✅ Connected to server');
 
         // Load conversations từ server
-        await loadConversations();
-
         // Setup WebSocket event handlers
         setupWebSocketHandlers();
         
-        // Fetch initial online users
-        await fetchOnlineUsers();
+        // Fetch initial online users FIRST (before loading conversations)
+        await loadOnlineUsers();
+        
+        // Then load conversations (will populate lastSeen for OFFLINE users only)
+        await loadConversations();
         
         showNotification('Đã kết nối server', 'success');
     } catch (error) {
@@ -387,9 +391,12 @@ function setupWebSocketHandlers() {
 
     // Handle user online
     window.onUserOnline = (payload) => {
-        console.log('📶 User online:', payload);
+        console.log('📶 User online event received:', payload);
+        console.log('📶 Adding to onlineUsers:', payload.userId);
         if (payload && payload.userId) {
             onlineUsers.add(payload.userId);
+            userLastSeen.delete(payload.userId); // Clear last seen when online
+            console.log('📶 Online users now:', Array.from(onlineUsers));
             updateOnlineIndicators();
             // Show notification if not self
             const currentUserId = localStorage.getItem('userId');
@@ -401,9 +408,16 @@ function setupWebSocketHandlers() {
 
     // Handle user offline
     window.onUserOffline = (payload) => {
-        console.log('📴 User offline:', payload);
+        console.log('📴 User offline event received:', payload);
+        console.log('📴 Removing from onlineUsers:', payload.userId);
         if (payload && payload.userId) {
             onlineUsers.delete(payload.userId);
+            // Save last seen time
+            if (payload.lastSeenAt) {
+                userLastSeen.set(payload.userId, payload.lastSeenAt);
+                console.log('📴 Saved last seen for', payload.userId, ':', payload.lastSeenAt);
+            }
+            console.log('📴 Online users now:', Array.from(onlineUsers));
             updateOnlineIndicators();
         }
     };
@@ -423,6 +437,10 @@ async function loadConversations() {
         }
         
         currentConversations = conversations;
+        
+        // Populate lastSeenAt from conversation members
+        populateLastSeenFromConversations(conversations);
+        
         displayConversations(conversations);
         console.log('✅ Conversations displayed');
     } catch (error) {
@@ -488,20 +506,46 @@ function displayConversations(conversations) {
 }
 
 // ===== ONLINE STATUS FUNCTIONS =====
-async function fetchOnlineUsers() {
+async function loadOnlineUsers() {
     try {
         const users = await window.socketHandler.getOnlineUsers();
-        console.log('📶 Online users:', users);
-        onlineUsers.clear();
-        users.forEach(user => {
-            if (user && user.userId) {
-                onlineUsers.add(user.userId);
-            }
-        });
-        updateOnlineIndicators();
+        // socket-real.js returns the users array directly
+        if (users && Array.isArray(users)) {
+            onlineUsers.clear();
+            users.forEach(user => {
+                if (user.userId && user.isOnline) {
+                    onlineUsers.add(user.userId);
+                    // Clear lastSeenAt for online users
+                    userLastSeen.delete(user.userId);
+                }
+            });
+            console.log('📶 Loaded online users:', Array.from(onlineUsers));
+            console.log('💾 userLastSeen after load:', Array.from(userLastSeen.keys()));
+            updateOnlineIndicators();
+        }
     } catch (error) {
-        console.error('❌ Fetch online users error:', error);
+        console.error('❌ Load online users error:', error);
     }
+}
+
+// Populate lastSeenAt from conversations when they load
+function populateLastSeenFromConversations(conversations) {
+    const currentUserId = localStorage.getItem('userId');
+    
+    conversations.forEach(conv => {
+        if (conv.type === 'direct' && conv.members) {
+            conv.members.forEach(member => {
+                // Skip current user
+                if (member.id === currentUserId) return;
+                
+                // If user is not online and has lastSeenAt, save it
+                if (!onlineUsers.has(member.id) && member.lastSeenAt) {
+                    userLastSeen.set(member.id, member.lastSeenAt);
+                    console.log('💾 Saved lastSeenAt for', member.displayName || member.id, ':', member.lastSeenAt);
+                }
+            });
+        }
+    });
 }
 
 function updateOnlineIndicators() {
@@ -524,11 +568,38 @@ function updateOnlineIndicators() {
                 const chatMembersEl = document.getElementById('chatMembers');
                 if (chatMembersEl) {
                     const isOnline = onlineUsers.has(otherUserId);
-                    chatMembersEl.textContent = isOnline ? '🟢 Online' : '⚫ Offline';
+                    if (isOnline) {
+                        chatMembersEl.textContent = '🟢 Online';
+                    } else {
+                        // Show last seen time if available
+                        const lastSeen = userLastSeen.get(otherUserId);
+                        if (lastSeen) {
+                            const timeAgo = getTimeAgo(lastSeen);
+                            chatMembersEl.textContent = `⚫ Hoạt động ${timeAgo}`;
+                        } else {
+                            chatMembersEl.textContent = '⚫ Offline';
+                        }
+                    }
                 }
             }
         }
     }
+}
+
+// Helper function to get "time ago" text
+function getTimeAgo(timestamp) {
+    const now = new Date();
+    const then = new Date(timestamp);
+    const diffMs = now - then;
+    const diffMinutes = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMinutes / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMinutes < 1) return 'vừa xong';
+    if (diffMinutes < 60) return `${diffMinutes} phút trước`;
+    if (diffHours < 24) return `${diffHours} giờ trước`;
+    if (diffDays < 7) return `${diffDays} ngày trước`;
+    return formatTime(timestamp); // Fallback to absolute time
 }
 
 async function openConversation(conversationId) {
@@ -539,19 +610,55 @@ async function openConversation(conversationId) {
 
     // Update active state
     document.querySelectorAll('.conversation-item').forEach(item => {
-        item.classList.toggle('active', item.dataset.id === conversationId);
+        item.classList.remove('active');
     });
+    const activeItem = document.querySelector(`.conversation-item[data-id="${conversationId}"]`);
+    if (activeItem) {
+        activeItem.classList.add('active');
+    }
 
     // Show chat area
     document.getElementById('emptyChat').style.display = 'none';
     document.getElementById('activeChat').style.display = 'flex';
 
     // Update chat header
-    document.getElementById('chatTitle').textContent = conv.title || 'Chat';
-    document.getElementById('chatMembers').textContent = 
-        conv.type === 'group' ? 'Nhóm' : 'Trực tiếp';
+    const chatTitle = document.getElementById('chatTitle');
+    const chatMembers = document.getElementById('chatMembers');
+    
+    if (chatTitle) {
+        chatTitle.textContent = conv.title || 'Chat';
+    }
+    
+    if (chatMembers) {
+        if (conv.type === 'group') {
+            const memberCount = conv.members?.length || 0;
+            chatMembers.textContent = `${memberCount} thành viên`;
+        } else if (conv.type === 'direct') {
+            // For direct chat, show online status
+            const currentUserId = localStorage.getItem('userId');
+            const otherMember = conv.members?.find(m => m.id !== currentUserId);
+            
+            if (otherMember) {
+                const isOnline = onlineUsers.has(otherMember.id);
+                if (isOnline) {
+                    chatMembers.textContent = '🟢 Online';
+                } else {
+                    // Show last seen if available
+                    const lastSeen = userLastSeen.get(otherMember.id);
+                    if (lastSeen) {
+                        const timeAgo = getTimeAgo(lastSeen);
+                        chatMembers.textContent = `⚫ Hoạt động ${timeAgo}`;
+                    } else {
+                        chatMembers.textContent = '⚫ Offline';
+                    }
+                }
+            } else {
+                chatMembers.textContent = 'Trực tiếp';
+            }
+        }
+    }
 
-    // Load messages từ server
+    // Load messages
     try {
         const messages = await window.socketHandler.getMessages(conversationId);
         console.log('📨 Loaded messages:', messages);
