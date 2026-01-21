@@ -23,11 +23,16 @@ namespace ChatServer.Services
 
         private void CreateIndexes()
         {
-            // Unique index cho directKey (QUAN TRỌNG - chống tạo trùng direct chat)
+            // Unique index cho directKey nhưng CHỈ áp dụng cho direct chat (tránh group bị trùng null)
             var directKeyIndex = Builders<Conversation>.IndexKeys.Ascending(c => c.DirectKey);
             _conversations.Indexes.CreateOne(new CreateIndexModel<Conversation>(
                 directKeyIndex,
-                new CreateIndexOptions { Unique = true, Sparse = true }
+                new CreateIndexOptions
+                {
+                    Unique = true,
+                    Sparse = true,
+                    Name = "directKey_unique_sparse"
+                }
             ));
 
             // Index cho member lookup
@@ -184,7 +189,7 @@ namespace ChatServer.Services
             // Lấy conversations
             return await _conversations
                 .Find(c => conversationIds.Contains(c.Id))
-                .SortByDescending(c => c.CreatedAt)
+                .SortByDescending(c => c.UpdatedAt)
                 .ToListAsync();
         }
 

@@ -1,5 +1,6 @@
 using MongoDB.Driver;
 using ChatServer.Models;
+using MongoDB.Bson;
 
 namespace ChatServer.Database
 {
@@ -34,9 +35,30 @@ namespace ChatServer.Database
         {
             try
             {
-                // Conversation: Unique direct_key for 1-1 chats
+                // Cleanup legacy data: remove directKey when stored as null (prevents unique index collisions)
+                try
+                {
+                    Conversations.UpdateMany(
+                        new BsonDocument("directKey", BsonNull.Value),
+                        Builders<Conversation>.Update.Unset("directKey")
+                    );
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"⚠️ directKey cleanup warning: {ex.Message}");
+                }
+
+                // Conversation: Unique directKey ONLY for direct chats (avoid group collisions on null/missing)
+                try { Conversations.Indexes.DropOne("directKey_1"); } catch { }
+                try { Conversations.Indexes.DropOne("directKey_unique_sparse"); } catch { }
+
                 var conversationIndexKeys = Builders<Conversation>.IndexKeys.Ascending(c => c.DirectKey);
-                var conversationIndexOptions = new CreateIndexOptions { Unique = true, Sparse = true };
+                var conversationIndexOptions = new CreateIndexOptions
+                {
+                    Unique = true,
+                    Sparse = true,
+                    Name = "directKey_unique_sparse"
+                };
                 Conversations.Indexes.CreateOne(new CreateIndexModel<Conversation>(conversationIndexKeys, conversationIndexOptions));
 
                 // Message: Compound index on conversationId + seq

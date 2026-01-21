@@ -87,11 +87,20 @@ namespace ChatServer.WebSockets.Handlers
                     return new WsResponse { Type = "error", RequestId = message.RequestId, Payload = new { error = "Invalid payload" } };
                 }
 
-                // Thêm creator vào member list
+                // Thêm creator vào member list + loại bỏ trùng
                 var allMemberIds = new List<string>(payload.MemberIds ?? new List<string>());
                 if (!allMemberIds.Contains(userId))
                 {
                     allMemberIds.Add(userId);
+                }
+                allMemberIds = allMemberIds
+                    .Where(id => !string.IsNullOrWhiteSpace(id))
+                    .Distinct()
+                    .ToList();
+
+                if (allMemberIds.Count < 2)
+                {
+                    return new WsResponse { Type = "error", RequestId = message.RequestId, Payload = new { error = "Member list is invalid" } };
                 }
 
                 // Tạo group
@@ -109,6 +118,7 @@ namespace ChatServer.WebSockets.Handlers
                     conversationId = conversation.Id,
                     title = conversation.Title,
                     type = conversation.Type,
+                    createdBy = conversation.CreatedBy,
                     members = members.Select(m => new
                     {
                         userId = m.UserId,

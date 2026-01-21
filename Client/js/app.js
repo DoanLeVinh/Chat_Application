@@ -370,7 +370,17 @@ function setupWebSocketHandlers() {
     window.onConversationCreated = (payload) => {
         console.log('🆕 Conversation created:', payload);
         loadConversations(); // Reload conversation list
-        showNotification('Tạo nhóm thành công', 'success');
+        const currentUserId = localStorage.getItem('userId');
+        const title = payload?.title || 'cuộc trò chuyện';
+        if (payload?.type === 'group') {
+            if (payload?.createdBy && payload.createdBy === currentUserId) {
+                showNotification(`Đã tạo nhóm: ${title}`, 'success');
+            } else {
+                showNotification(`Bạn được thêm vào nhóm: ${title}`, 'info');
+            }
+        } else {
+            showNotification('Có cuộc trò chuyện mới', 'info');
+        }
     };
 
     // Handle member added
@@ -1004,12 +1014,13 @@ function openCreateGroupModal() {
     // Setup member search
     setupMemberSearch();
 
-    // Close handlers
-    document.getElementById('closeGroupModal')?.addEventListener('click', closeCreateGroupModal);
-    document.getElementById('cancelGroupModal')?.addEventListener('click', closeCreateGroupModal);
-    
-    // Create group handler
-    document.getElementById('confirmCreateGroup')?.addEventListener('click', createGroup);
+    // Handlers (avoid stacking listeners each time modal opens)
+    const closeBtn = document.getElementById('closeGroupModal');
+    const cancelBtn = document.getElementById('cancelGroupModal');
+    const confirmBtn = document.getElementById('confirmCreateGroup');
+    if (closeBtn) closeBtn.onclick = closeCreateGroupModal;
+    if (cancelBtn) cancelBtn.onclick = closeCreateGroupModal;
+    if (confirmBtn) confirmBtn.onclick = createGroup;
 }
 
 function closeCreateGroupModal() {
@@ -1037,7 +1048,18 @@ function createGroup() {
 
     // Send create_group via WebSocket
     const currentUserId = localStorage.getItem('userId');
-    const memberIds = [currentUserId, ...selectedMembers.map(m => m.id)];
+    if (!currentUserId) {
+        showNotification('Bạn chưa đăng nhập hoặc phiên đăng nhập đã hết hạn', 'error');
+        return;
+    }
+
+    // Sanitize memberIds: remove null/empty + unique
+    const rawMemberIds = [currentUserId, ...selectedMembers.map(m => m?.id)];
+    const memberIds = Array.from(new Set(rawMemberIds.filter(id => typeof id === 'string' && id.trim().length > 0)));
+    if (memberIds.length < 2) {
+        showNotification('Danh sách thành viên không hợp lệ', 'error');
+        return;
+    }
     
     // Use createGroup instead of createConversation
     window.socketHandler.createGroup(groupName, memberIds)
@@ -1077,7 +1099,7 @@ function formatTime(isoString) {
 function updateConversationLastMessage(conversationId, content) {
     const conv = currentConversations.find(c => c.conversationId === conversationId);
     if (conv) {
-        conv.lastMessage = content;
+        conv.lastMessagePreview = content;
         conv.updatedAt = new Date().toISOString();
         displayConversations(currentConversations);
     }

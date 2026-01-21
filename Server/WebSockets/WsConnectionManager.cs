@@ -73,6 +73,10 @@ namespace ChatServer.WebSockets
         {
             foreach (var userId in userIds)
             {
+                if (string.IsNullOrWhiteSpace(userId))
+                {
+                    continue;
+                }
                 if (_userConnections.TryGetValue(userId, out var connectionIds))
                 {
                     foreach (var connId in connectionIds)

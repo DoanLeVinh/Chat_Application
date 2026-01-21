@@ -59,9 +59,12 @@ namespace ChatServer.Services
                 return existing;
             }
 
-            // Tăng seq trong conversation (atomic operation)
+            // Tăng seq trong conversation (atomic) + bump updatedAt để sắp xếp conversation list mượt
             var filter = Builders<Conversation>.Filter.Eq(c => c.Id, conversationId);
-            var update = Builders<Conversation>.Update.Inc(c => c.LastSeq, 1);
+            var now = DateTime.UtcNow;
+            var update = Builders<Conversation>.Update
+                .Inc(c => c.LastSeq, 1)
+                .Set(c => c.UpdatedAt, now);
             var options = new FindOneAndUpdateOptions<Conversation>
             {
                 ReturnDocument = ReturnDocument.After
@@ -94,7 +97,7 @@ namespace ChatServer.Services
                 Content = content,
                 ClientMessageId = clientMessageId,
                 Seq = conversation.LastSeq,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = now
             };
 
             await _messages.InsertOneAsync(message);
