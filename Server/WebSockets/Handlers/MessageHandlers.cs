@@ -58,6 +58,7 @@ namespace ChatServer.WebSockets.Handlers
                     senderDisplayName = senderDisplayName,
                     messageType = newMessage.Type,
                     content = newMessage.Content,
+                    clientMessageId = newMessage.ClientMessageId, // Để frontend reconcile optimistic rendering
                     seq = newMessage.Seq,
                     createdAt = newMessage.CreatedAt
                 };

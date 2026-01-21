@@ -282,7 +282,7 @@ function setupWebSocketHandlers() {
                 const timeEl = pendingEl.querySelector('.message-time');
                 if (timeEl) {
                     const timeText = payload.createdAt ? formatTime(payload.createdAt) : formatTime(new Date().toISOString());
-                    timeEl.textContent = payload.seq ? `${timeText} • Seq: ${payload.seq}` : timeText;
+                    timeEl.textContent = payload.seq ? `${timeText}` : timeText;
                 }
 
                 // If this message has attachment info, ensure UI shows it
