@@ -766,3 +766,15 @@
     width: 100%;
 }
 
+/* Message sticker styling */
+.message-sticker {
+    margin-top: 8px;
+}
+
+.message-sticker img {
+    width: 120px;
+    height: 120px;
+    object-fit: contain;
+    border-radius: 8px;
+}
+

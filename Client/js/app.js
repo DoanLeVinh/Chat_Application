@@ -336,9 +336,12 @@ function setupWebSocketHandlers() {
                     }
                 }
                 console.log('✅ Optimistic message reconciled');
-                return; // Important: return early for our own messages
+            } else {
+                console.log('⚠️ Pending element not found, but this is our message - skipping display');
             }
+            return; // CRITICAL: Always return early for our own messages to avoid duplicate
         }
+
         
         // Nếu đang mở conversation này, hiển thị message từ người khác
         if (payload.conversationId === currentConversationId) {

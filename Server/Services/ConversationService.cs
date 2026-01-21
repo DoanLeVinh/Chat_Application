@@ -23,18 +23,34 @@ namespace ChatServer.Services
 
         private void CreateIndexes()
         {
-            // Unique index cho directKey (QUAN TRỌNG - chống tạo trùng direct chat)
-            var directKeyIndex = Builders<Conversation>.IndexKeys.Ascending(c => c.DirectKey);
-            _conversations.Indexes.CreateOne(new CreateIndexModel<Conversation>(
-                directKeyIndex,
-                new CreateIndexOptions { Unique = true, Sparse = true }
-            ));
+            try
+            {
+                // Unique index cho directKey (QUAN TRỌNG - chống tạo trùng direct chat)
+                var directKeyIndex = Builders<Conversation>.IndexKeys.Ascending(c => c.DirectKey);
+                _conversations.Indexes.CreateOne(new CreateIndexModel<Conversation>(
+                    directKeyIndex,
+                    new CreateIndexOptions { Unique = true, Sparse = true }
+                ));
+            }
+            catch (MongoCommandException ex) when (ex.CodeName == "IndexOptionsConflict" || ex.CodeName == "IndexKeySpecsConflict")
+            {
+                // Index đã tồn tại, bỏ qua
+                Console.WriteLine($"DirectKey index already exists: {ex.Message}");
+            }
 
-            // Index cho member lookup
-            var memberIndex = Builders<ConversationMember>.IndexKeys
-                .Ascending(m => m.UserId)
-                .Ascending(m => m.ConversationId);
-            _members.Indexes.CreateOne(new CreateIndexModel<ConversationMember>(memberIndex));
+            try
+            {
+                // Index cho member lookup
+                var memberIndex = Builders<ConversationMember>.IndexKeys
+                    .Ascending(m => m.UserId)
+                    .Ascending(m => m.ConversationId);
+                _members.Indexes.CreateOne(new CreateIndexModel<ConversationMember>(memberIndex));
+            }
+            catch (MongoCommandException ex) when (ex.CodeName == "IndexOptionsConflict" || ex.CodeName == "IndexKeySpecsConflict")
+            {
+                // Index đã tồn tại, bỏ qua
+                Console.WriteLine($"Member index already exists: {ex.Message}");
+            }
         }
 
         /// <summary>

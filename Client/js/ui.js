@@ -63,12 +63,24 @@ function displayMessage(message) {
         return url;
     };
 
+
     // Render file attachment nếu có
     let fileHTML = '';
-    if (message.fileUrl) {
+    
+    // Check if this is a sticker message
+    const msgType = message.messageType || message.Type || '';
+    if (msgType === 'sticker') {
+        // Sticker: content là sticker code, cần render thành image
+        const stickerCode = message.content;
+        const stickerUrl = `http://localhost:5000/stickers/${stickerCode}.png`;
+        fileHTML = `
+            <div class="message-sticker">
+                <img src="${stickerUrl}" alt="${escapeHtml(stickerCode)}" title="Đã gửi sticker">
+            </div>
+        `;
+    } else if (message.fileUrl) {
         const fileUrl = resolveFileUrl(message.fileUrl);
         // Normalized type check (backend often sends raw MIME, or we inferred it)
-        const msgType = message.messageType || message.fileType || '';
         
         if (msgType === 'image' || msgType.startsWith('image/')) {
             fileHTML = `
@@ -105,6 +117,7 @@ function displayMessage(message) {
         }
     }
 
+
     // Nếu đang upload file (optimistic) -> show progress bar
     const hasUploadProgress = typeof message.uploadProgress === 'number' && message.uploadProgress >= 0 && message.uploadProgress < 100;
     const uploadStatusText = message.uploadStatusText || (message.uploadStatus === 'paused' ? 'Tạm dừng' : (message.uploadStatus === 'uploading' ? 'Đang gửi' : ''));
@@ -118,8 +131,11 @@ function displayMessage(message) {
     ` : '';
 
     // Nếu là tin nhắn đính kèm và content chỉ là tên file thì không render phần text để tránh bị lặp
+    // Nếu là sticker thì cũng không render text (chỉ hiển thị sticker image)
     const shouldRenderText = !!(message.content && String(message.content).trim())
-        && !(message.fileUrl && message.fileName && String(message.content).trim() === String(message.fileName).trim());
+        && !(message.fileUrl && message.fileName && String(message.content).trim() === String(message.fileName).trim())
+        && msgType !== 'sticker'; // Không hiển thị text khi là sticker
+
 
     const renderReactions = (reactions) => {
         const list = Array.isArray(reactions) ? reactions : [];
@@ -576,8 +592,8 @@ style.textContent = `
         gap: 6px;
         flex-wrap: wrap;
         margin-top: 6px;
-        min-height: 18px;
     }
+
 
     .reaction-chip {
         display: inline-flex;
