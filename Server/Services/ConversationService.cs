@@ -23,18 +23,42 @@ namespace ChatServer.Services
 
         private void CreateIndexes()
         {
-            // Unique index cho directKey (QUAN TRỌNG - chống tạo trùng direct chat)
-            var directKeyIndex = Builders<Conversation>.IndexKeys.Ascending(c => c.DirectKey);
-            _conversations.Indexes.CreateOne(new CreateIndexModel<Conversation>(
-                directKeyIndex,
-                new CreateIndexOptions { Unique = true, Sparse = true }
-            ));
+            try
+            {
+                // Unique index cho directKey (QUAN TRỌNG - chống tạo trùng direct chat)
+                var directKeyIndex = Builders<Conversation>.IndexKeys.Ascending(c => c.DirectKey);
+                _conversations.Indexes.CreateOne(new CreateIndexModel<Conversation>(
+                    directKeyIndex,
+                    new CreateIndexOptions 
+                    { 
+                        Unique = true, 
+                        Sparse = true,
+                        Name = "directKey_unique_sparse" // Chỉ định tên index rõ ràng
+                    }
+                ));
+            }
+            catch (MongoCommandException ex) when (ex.CodeName == "IndexOptionsConflict" || ex.CodeName == "IndexKeySpecsConflict")
+            {
+                // Index đã tồn tại, bỏ qua lỗi
+                Console.WriteLine($"⚠️ Index already exists: {ex.Message}");
+            }
 
-            // Index cho member lookup
-            var memberIndex = Builders<ConversationMember>.IndexKeys
-                .Ascending(m => m.UserId)
-                .Ascending(m => m.ConversationId);
-            _members.Indexes.CreateOne(new CreateIndexModel<ConversationMember>(memberIndex));
+            try
+            {
+                // Index cho member lookup
+                var memberIndex = Builders<ConversationMember>.IndexKeys
+                    .Ascending(m => m.UserId)
+                    .Ascending(m => m.ConversationId);
+                _members.Indexes.CreateOne(new CreateIndexModel<ConversationMember>(
+                    memberIndex,
+                    new CreateIndexOptions { Name = "userId_conversationId_index" }
+                ));
+            }
+            catch (MongoCommandException ex) when (ex.CodeName == "IndexOptionsConflict" || ex.CodeName == "IndexKeySpecsConflict")
+            {
+                // Index đã tồn tại, bỏ qua lỗi
+                Console.WriteLine($"⚠️ Index already exists: {ex.Message}");
+            }
         }
 
         /// <summary>
