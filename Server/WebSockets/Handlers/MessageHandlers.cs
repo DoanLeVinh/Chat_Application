@@ -1,5 +1,7 @@
 using System.Text.Json;
 using ChatServer.Services;
+using ChatServer.Database;
+using MongoDB.Driver;
 
 namespace ChatServer.WebSockets.Handlers
 {
@@ -87,7 +89,8 @@ namespace ChatServer.WebSockets.Handlers
             string userId,
             ConversationService conversationService,
             MessageService messageService,
-            UserService userService)
+            UserService userService,
+            MongoDBContext db)
         {
             try
             {
@@ -109,6 +112,26 @@ namespace ChatServer.WebSockets.Handlers
 
                 // Lấy messages
                 var messages = await messageService.GetMessagesAsync(payload.ConversationId, payload.Limit ?? 50, payload.BeforeSeq);
+
+                // Load reactions for these messages (aggregate emoji counts)
+                var messageIds = messages.Select(m => m.Id).Where(id => !string.IsNullOrWhiteSpace(id)).ToList();
+                var reactionsByMessageId = new Dictionary<string, List<object>>();
+                if (messageIds.Count > 0)
+                {
+                    var reactions = await db.MessageReactions
+                        .Find(r => messageIds.Contains(r.MessageId))
+                        .Project(r => new { r.MessageId, r.Emoji })
+                        .ToListAsync();
+
+                    reactionsByMessageId = reactions
+                        .GroupBy(r => r.MessageId)
+                        .ToDictionary(
+                            g => g.Key,
+                            g => g.GroupBy(x => x.Emoji)
+                                  .Select(eg => (object)new { emoji = eg.Key, count = eg.Count() })
+                                  .ToList()
+                        );
+                }
 
                 // Lấy thông tin user cho tất cả senderIds
                 var senderIds = messages.Select(m => m.SenderId).Distinct().ToList();
@@ -135,7 +158,8 @@ namespace ChatServer.WebSockets.Handlers
                             content = m.Content,
                             fileUrl = m.FileUrl,
                             seq = m.Seq,
-                            createdAt = m.CreatedAt
+                            createdAt = m.CreatedAt,
+                            reactions = reactionsByMessageId.TryGetValue(m.Id, out var r) ? r : new List<object>()
                         }).ToList()
                     }
                 };

@@ -139,6 +139,8 @@ function initLoginPage() {
 
 // ===== CHAT PAGE INITIALIZATION// Global state
 let currentConversationId = null;
+// Expose for ui.js helpers (top-level `let` doesn't become window property)
+window.currentConversationId = null;
 let currentConversations = [];
 let onlineUsers = new Set();
 let userLastSeen = new Map(); // Store last seen timestamps for offline users
@@ -431,6 +433,22 @@ function setupWebSocketHandlers() {
             updateOnlineIndicators();
         }
     };
+
+    // Handle reaction updates
+    window.onReactionUpdated = (payload) => {
+        try {
+            const conversationId = payload?.conversationId || payload?.ConversationId;
+            const messageId = payload?.messageId || payload?.MessageId;
+            const emoji = payload?.emoji || payload?.Emoji;
+            if (!conversationId || !messageId || !emoji) return;
+            if (conversationId !== currentConversationId) return;
+            if (typeof window.updateMessageReactionsUI === 'function') {
+                window.updateMessageReactionsUI(messageId, emoji, 1);
+            }
+        } catch (e) {
+            console.error('reaction_updated handler error:', e);
+        }
+    };
 }
 
 // ===== CONVERSATION MANAGEMENT (Người 2) =====
@@ -614,6 +632,7 @@ function getTimeAgo(timestamp) {
 
 async function openConversation(conversationId) {
     currentConversationId = conversationId;
+    window.currentConversationId = conversationId;
     
     const conv = currentConversations.find(c => c.conversationId === conversationId);
     if (!conv) return;

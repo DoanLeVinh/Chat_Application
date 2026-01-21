@@ -116,15 +116,28 @@ function displayMessage(message) {
     // Nếu là tin nhắn đính kèm và content chỉ là tên file thì không render phần text để tránh bị lặp
     const shouldRenderText = !!(message.content && String(message.content).trim())
         && !(message.fileUrl && message.fileName && String(message.content).trim() === String(message.fileName).trim());
+
+    const renderReactions = (reactions) => {
+        const list = Array.isArray(reactions) ? reactions : [];
+        if (list.length === 0) return '';
+        return list
+            .filter(r => r && r.emoji)
+            .map(r => {
+                const count = Number(r.count || 0);
+                return `<span class="reaction-chip" data-emoji="${escapeHtml(String(r.emoji))}">${escapeHtml(String(r.emoji))}${count > 1 ? ` <b>${count}</b>` : ''}</span>`;
+            })
+            .join('');
+    };
     
     const messageHTML = `
-        <div class="message ${isOwn ? 'own' : ''}" data-id="${message.messageId}"${clientIdAttr}>
+        <div class="message ${isOwn ? 'own' : ''}" data-id="${message.messageId}" data-conversation-id="${escapeHtml(message.conversationId || '')}"${clientIdAttr}>
             ${!isOwn ? `<img src="assets/images/default-avatar.svg" class="avatar" alt="Avatar">` : ''}
             <div class="message-content">
                 ${!isOwn ? `<div class="message-sender">${escapeHtml(senderName)}</div>` : ''}
                 ${shouldRenderText ? `<div class="message-text">${escapeHtml(message.content)}</div>` : ''}
                 ${fileHTML}
                 ${progressHTML}
+                <div class="message-reactions">${renderReactions(message.reactions)}</div>
                 <div class="message-time">${timeText}</div>
             </div>
             ${isOwn ? `<img src="assets/images/default-avatar.svg" class="avatar" alt="Avatar">` : ''}
@@ -141,6 +154,199 @@ function displayMessage(message) {
 
 // Ensure app.js can reliably call window.displayMessage (history render after reload)
 window.displayMessage = displayMessage;
+
+// ===== REACTIONS UI (Long-press + dblclick) =====
+function ensureReactionPicker() {
+    if (document.getElementById('reactionPicker')) return;
+
+    const picker = document.createElement('div');
+    picker.id = 'reactionPicker';
+    picker.className = 'reaction-picker';
+    picker.style.display = 'none';
+    picker.innerHTML = `
+        <button type="button" class="reaction-btn" data-emoji="❤️">❤️</button>
+        <button type="button" class="reaction-btn" data-emoji="👍">👍</button>
+        <button type="button" class="reaction-btn" data-emoji="😂">😂</button>
+        <button type="button" class="reaction-btn" data-emoji="😮">😮</button>
+        <button type="button" class="reaction-btn" data-emoji="😢">😢</button>
+        <button type="button" class="reaction-btn" data-emoji="😡">😡</button>
+    `;
+    document.body.appendChild(picker);
+
+    const backdrop = document.createElement('div');
+    backdrop.id = 'reactionPickerBackdrop';
+    backdrop.className = 'reaction-picker-backdrop';
+    backdrop.style.display = 'none';
+    backdrop.addEventListener('click', hideReactionPicker);
+    document.body.appendChild(backdrop);
+
+    picker.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.reaction-btn');
+        if (!btn) return;
+        const emoji = btn.dataset.emoji;
+        const target = picker.__targetMessageEl;
+        hideReactionPicker();
+        if (!target || !emoji) return;
+
+        const messageId = target.dataset.id;
+        const conversationId = target.dataset.conversationId || window.currentConversationId;
+        if (!conversationId || !messageId || String(messageId).startsWith('pending:')) return;
+
+        try {
+            if (window.socketHandler?.addReaction) {
+                await window.socketHandler.addReaction(conversationId, messageId, emoji);
+            } else if (window.socketHandler?.send) {
+                await window.socketHandler.send('add_reaction', { conversationId, messageId, emoji });
+            }
+        } catch (err) {
+            console.error('❌ Add reaction error:', err);
+            showNotification('Không thể thả cảm xúc', 'error');
+        }
+    });
+}
+
+function showReactionPickerForMessage(messageEl, clientX, clientY) {
+    ensureReactionPicker();
+    const picker = document.getElementById('reactionPicker');
+    const backdrop = document.getElementById('reactionPickerBackdrop');
+    if (!picker || !backdrop) return;
+
+    picker.__targetMessageEl = messageEl;
+    backdrop.style.display = 'block';
+    picker.style.display = 'flex';
+
+    // Position near pointer, keep inside viewport
+    const margin = 10;
+    const rect = picker.getBoundingClientRect();
+    let left = clientX - rect.width / 2;
+    let top = clientY - rect.height - 12;
+    left = Math.max(margin, Math.min(window.innerWidth - rect.width - margin, left));
+    top = Math.max(margin, Math.min(window.innerHeight - rect.height - margin, top));
+    picker.style.left = `${left}px`;
+    picker.style.top = `${top}px`;
+}
+
+function hideReactionPicker() {
+    const picker = document.getElementById('reactionPicker');
+    const backdrop = document.getElementById('reactionPickerBackdrop');
+    if (picker) {
+        picker.style.display = 'none';
+        picker.__targetMessageEl = null;
+    }
+    if (backdrop) backdrop.style.display = 'none';
+}
+
+function updateMessageReactionsUI(messageId, emoji, delta = 1) {
+    if (!messageId || !emoji) return;
+    const el = document.querySelector(`.message[data-id="${CSS.escape(String(messageId))}"]`);
+    if (!el) return;
+    const container = el.querySelector('.message-reactions');
+    if (!container) return;
+
+    const safeEmoji = String(emoji);
+    let chip = container.querySelector(`.reaction-chip[data-emoji="${CSS.escape(safeEmoji)}"]`);
+    if (!chip) {
+        chip = document.createElement('span');
+        chip.className = 'reaction-chip';
+        chip.dataset.emoji = safeEmoji;
+        chip.innerHTML = `${escapeHtml(safeEmoji)} <b>1</b>`;
+        container.appendChild(chip);
+        return;
+    }
+
+    const b = chip.querySelector('b');
+    const current = b ? Number(b.textContent) : 1;
+    const next = Math.max(1, current + Number(delta || 0));
+    if (b) {
+        b.textContent = String(next);
+    } else if (next > 1) {
+        chip.insertAdjacentHTML('beforeend', ` <b>${next}</b>`);
+    }
+}
+
+window.updateMessageReactionsUI = updateMessageReactionsUI;
+
+function initReactionGestures() {
+    const messagesArea = document.getElementById('messagesArea');
+    if (!messagesArea) return;
+
+    // Bind globally once (chat page can rerender messagesArea content)
+    if (document.__reactionGesturesBound) return;
+    document.__reactionGesturesBound = true;
+
+    let timer = null;
+    let target = null;
+    let start = null;
+    const LONG_PRESS_MS = 450;
+    const MOVE_TOLERANCE = 24;
+
+    const clear = () => {
+        if (timer) clearTimeout(timer);
+        timer = null;
+        target = null;
+        start = null;
+    };
+
+    document.addEventListener('pointerdown', (e) => {
+        const msgEl = e.target.closest('.message');
+        if (!msgEl) return;
+        if (!messagesArea.contains(msgEl)) return;
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
+        if (String(msgEl.dataset.id || '').startsWith('pending:')) return;
+
+        clear();
+        target = msgEl;
+        start = { x: e.clientX, y: e.clientY };
+
+        timer = setTimeout(() => {
+            // Use last known pointer position
+            const x = start?.x ?? e.clientX;
+            const y = start?.y ?? e.clientY;
+            showReactionPickerForMessage(msgEl, x, y);
+            clear();
+        }, LONG_PRESS_MS);
+    }, { passive: true, capture: true });
+
+    document.addEventListener('pointermove', (e) => {
+        if (!timer || !start) return;
+        const dx = e.clientX - start.x;
+        const dy = e.clientY - start.y;
+        if (Math.hypot(dx, dy) > MOVE_TOLERANCE) {
+            clear();
+        }
+    }, { passive: true, capture: true });
+
+    ['pointerup', 'pointercancel', 'pointerleave'].forEach(evt => {
+        document.addEventListener(evt, () => {
+            clear();
+        }, { passive: true, capture: true });
+    });
+
+    document.addEventListener('dblclick', async (e) => {
+        const msgEl = e.target.closest('.message');
+        if (!msgEl) return;
+        if (!messagesArea.contains(msgEl)) return;
+        clear();
+        hideReactionPicker();
+        const messageId = msgEl.dataset.id;
+        const conversationId = msgEl.dataset.conversationId || window.currentConversationId;
+        if (!conversationId || !messageId || String(messageId).startsWith('pending:')) return;
+
+        try {
+            if (window.socketHandler?.addReaction) {
+                await window.socketHandler.addReaction(conversationId, messageId, '❤️');
+            } else if (window.socketHandler?.send) {
+                await window.socketHandler.send('add_reaction', { conversationId, messageId, emoji: '❤️' });
+            }
+        } catch (err) {
+            console.error('❌ Double-click reaction error:', err);
+        }
+    }, true);
+}
+
+// Expose + run once after load
+window.initReactionGestures = initReactionGestures;
+window.addEventListener('load', initReactionGestures);
 
 // Update conversation list when new message arrives
 function updateConversationLastMessage(conversationId, lastMessage) {
@@ -359,6 +565,67 @@ style.textContent = `
         text-align: center;
         display: inline-block;
         margin-top: 4px;
+    }
+
+    .message-reactions {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-top: 6px;
+        min-height: 18px;
+    }
+
+    .reaction-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: rgba(0,0,0,0.06);
+        font-size: 13px;
+        line-height: 18px;
+        user-select: none;
+    }
+
+    .reaction-chip b {
+        font-size: 12px;
+        font-weight: 700;
+    }
+
+    .reaction-picker-backdrop {
+        position: fixed;
+        inset: 0;
+        background: transparent;
+        z-index: 20000;
+    }
+
+    .reaction-picker {
+        position: fixed;
+        z-index: 20001;
+        display: flex;
+        gap: 6px;
+        padding: 8px;
+        border-radius: 999px;
+        background: #fff;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.18);
+        border: 1px solid rgba(0,0,0,0.08);
+    }
+
+    .reaction-picker .reaction-btn {
+        width: 34px;
+        height: 34px;
+        border: none;
+        background: transparent;
+        border-radius: 999px;
+        cursor: pointer;
+        font-size: 20px;
+        line-height: 34px;
+        transition: transform 120ms ease, background 120ms ease;
+    }
+
+    .reaction-picker .reaction-btn:hover {
+        transform: translateY(-1px) scale(1.05);
+        background: rgba(0,0,0,0.06);
     }
 `;
 document.head.appendChild(style);
