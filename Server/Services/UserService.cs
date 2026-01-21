@@ -86,22 +86,46 @@ namespace ChatServer.Services
         {
             try
             {
-                var filter = Builders<User>.Filter.In(u => u.Id, userIds);
+                if (userIds == null || userIds.Count == 0)
+                {
+                    return new Dictionary<string, UserStatusInfo>();
+                }
+
+                var safeUserIds = userIds
+                    .Where(id => !string.IsNullOrWhiteSpace(id))
+                    .Distinct()
+                    .ToList();
+
+                if (safeUserIds.Count == 0)
+                {
+                    return new Dictionary<string, UserStatusInfo>();
+                }
+
+                var filter = Builders<User>.Filter.In(u => u.Id, safeUserIds);
                 var users = await _context.Users.Find(filter).ToListAsync();
-                
-                return users.ToDictionary(
-                    u => u.Id,
-                    u => new UserStatusInfo
-                    {
-                        UserId = u.Id,
-                        DisplayName = u.DisplayName,
-                        IsOnline = u.IsOnline,
-                        LastSeenAt = u.LastSeenAt
-                    }
-                );
+
+                // Defensive: tránh crash nếu DB có user thiếu/invalid _id
+                return users
+                    .Where(u => u != null && !string.IsNullOrWhiteSpace(u.Id))
+                    .GroupBy(u => u.Id)
+                    .ToDictionary(
+                        g => g.Key,
+                        g =>
+                        {
+                            var u = g.First();
+                            return new UserStatusInfo
+                            {
+                                UserId = u.Id,
+                                DisplayName = u.DisplayName,
+                                IsOnline = u.IsOnline,
+                                LastSeenAt = u.LastSeenAt
+                            };
+                        }
+                    );
             }
-            catch
+            catch (Exception ex)
             {
+                Console.WriteLine($"❌ GetUsersStatusAsync error: {ex.Message}");
                 return new Dictionary<string, UserStatusInfo>();
             }
         }

@@ -26,6 +26,7 @@ namespace ChatServer.Database
         public IMongoCollection<Message> Messages => _database.GetCollection<Message>("messages");
         public IMongoCollection<Conversation> Conversations => _database.GetCollection<Conversation>("conversations");
         public IMongoCollection<ConversationMember> ConversationMembers => _database.GetCollection<ConversationMember>("conversation_members");
+        public IMongoCollection<ConversationInvite> ConversationInvites => _database.GetCollection<ConversationInvite>("conversation_invites");
         public IMongoCollection<MessageReaction> MessageReactions => _database.GetCollection<MessageReaction>("message_reactions");
         public IMongoCollection<PinnedMessage> PinnedMessages => _database.GetCollection<PinnedMessage>("pinned_messages");
         public IMongoCollection<Sticker> Stickers => _database.GetCollection<Sticker>("stickers");
@@ -78,6 +79,29 @@ namespace ChatServer.Database
                     .Ascending(m => m.UserId);
                 var memberIndexOptions = new CreateIndexOptions { Unique = true };
                 ConversationMembers.Indexes.CreateOne(new CreateIndexModel<ConversationMember>(memberIndexKeys, memberIndexOptions));
+
+                // ConversationInvite: one pending invite per (conversationId + invitedUserId)
+                // NOTE: Some MongoDB.Driver versions used by this project don't support
+                // CreateIndexOptions.PartialFilterExpression. We enforce "one pending invite"
+                // by creating a unique compound index that includes Status.
+                var pendingInviteKeys = Builders<ConversationInvite>.IndexKeys
+                    .Ascending(i => i.ConversationId)
+                    .Ascending(i => i.InvitedUserId)
+                    .Ascending(i => i.Status);
+
+                var pendingInviteOptions = new CreateIndexOptions
+                {
+                    Unique = true,
+                    Name = "invite_unique_by_status"
+                };
+                ConversationInvites.Indexes.CreateOne(new CreateIndexModel<ConversationInvite>(pendingInviteKeys, pendingInviteOptions));
+
+                // ConversationInvite: query pending by conversation quickly
+                var inviteQueryKeys = Builders<ConversationInvite>.IndexKeys
+                    .Ascending(i => i.ConversationId)
+                    .Ascending(i => i.Status)
+                    .Descending(i => i.CreatedAt);
+                ConversationInvites.Indexes.CreateOne(new CreateIndexModel<ConversationInvite>(inviteQueryKeys));
 
                 // User: Unique email
                 var userEmailIndexKeys = Builders<User>.IndexKeys.Ascending(u => u.Email);

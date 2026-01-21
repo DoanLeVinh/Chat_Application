@@ -167,7 +167,7 @@ namespace ChatServer.WebSockets
                             }
                             else
                             {
-                                response = await ConversationHandlers.HandleAddMemberAsync(wsMessage, userId, conversationService, manager);
+                                response = await ConversationHandlers.HandleAddMemberAsync(wsMessage, userId, conversationService, manager, userService);
                             }
                             break;
 
@@ -178,7 +178,73 @@ namespace ChatServer.WebSockets
                             }
                             else
                             {
-                                response = await ConversationHandlers.HandleRemoveMemberAsync(wsMessage, userId, conversationService, manager);
+                                response = await ConversationHandlers.HandleRemoveMemberAsync(wsMessage, userId, conversationService, manager, userService);
+                            }
+                            break;
+
+                        case "get_members":
+                            if (userId == null)
+                            {
+                                response = new WsResponse { Type = "error", RequestId = wsMessage.RequestId, Payload = new { error = "Not authenticated" } };
+                            }
+                            else
+                            {
+                                response = await ConversationHandlers.HandleGetMembersAsync(wsMessage, userId, conversationService, userService);
+                            }
+                            break;
+
+                        case "set_invite_mode":
+                            if (userId == null)
+                            {
+                                response = new WsResponse { Type = "error", RequestId = wsMessage.RequestId, Payload = new { error = "Not authenticated" } };
+                            }
+                            else
+                            {
+                                response = await ConversationHandlers.HandleSetInviteModeAsync(wsMessage, userId, conversationService, manager);
+                            }
+                            break;
+
+                        case "invite_member":
+                            if (userId == null)
+                            {
+                                response = new WsResponse { Type = "error", RequestId = wsMessage.RequestId, Payload = new { error = "Not authenticated" } };
+                            }
+                            else
+                            {
+                                response = await ConversationHandlers.HandleInviteMemberAsync(wsMessage, userId, conversationService, manager, userService);
+                            }
+                            break;
+
+                        case "get_pending_invites":
+                            if (userId == null)
+                            {
+                                response = new WsResponse { Type = "error", RequestId = wsMessage.RequestId, Payload = new { error = "Not authenticated" } };
+                            }
+                            else
+                            {
+                                response = await ConversationHandlers.HandleGetPendingInvitesAsync(wsMessage, userId, conversationService, userService);
+                            }
+                            break;
+
+                        case "approve_invite":
+                            if (userId == null)
+                            {
+                                response = new WsResponse { Type = "error", RequestId = wsMessage.RequestId, Payload = new { error = "Not authenticated" } };
+                            }
+                            else
+                            {
+                                response = await ConversationHandlers.HandleApproveInviteAsync(wsMessage, userId, conversationService, manager, userService);
+                            }
+                            break;
+
+                        case "reject_invite":
+                            if (userId == null)
+                            {
+                                response = new WsResponse { Type = "error", RequestId = wsMessage.RequestId, Payload = new { error = "Not authenticated" } };
+                            }
+                            else
+                            {
+                                response = await ConversationHandlers.HandleRejectInviteAsync(wsMessage, userId, conversationService, manager, userService);
                             }
                             break;
 

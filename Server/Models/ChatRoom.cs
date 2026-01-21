@@ -40,6 +40,20 @@ namespace ChatServer.Models
         public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
         /// <summary>
+        /// Version để đồng bộ realtime danh sách thành viên (tăng mỗi khi add/kick)
+        /// </summary>
+        [BsonElement("membersVersion")]
+        public long MembersVersion { get; set; } = 1;
+
+        /// <summary>
+        /// Chế độ mời/tham gia nhóm: public | private
+        /// - public: bất kỳ thành viên nào cũng có thể thêm người khác ngay
+        /// - private: thành viên mời phải chờ quản trị viên duyệt
+        /// </summary>
+        [BsonElement("inviteMode")]
+        public string InviteMode { get; set; } = "public";
+
+        /// <summary>
         /// Sequence counter để tạo seq cho messages
         /// </summary>
         [BsonElement("lastSeq")]
