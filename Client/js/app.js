@@ -176,6 +176,10 @@ async function initChatPage() {
         // Then load conversations (will populate lastSeen for OFFLINE users only)
         await loadConversations();
         
+        // Setup UI components
+        setupSearchBox();
+        setupFileUpload();
+        
         showNotification('Đã kết nối server', 'success');
     } catch (error) {
         console.error('❌ Connection error:', error);
@@ -707,7 +711,7 @@ function renderMessages(messages) {
 // ===== SEND MESSAGE (Người 2) =====
 // Global variables for file uploads
 let selectedFiles = [];
-let uploadService = null;
+// uploadService is defined later as const
 const pendingUploads = new Map(); // clientMessageId -> { file, conversationId, content, messageType, token, lastProgress }
 
 async function resumePendingUploads() {
@@ -1120,6 +1124,85 @@ async function searchUsers(query) {
         console.error('❌ Search error:', error);
         return [];
     }
+}
+
+
+// Upload Service Instance
+const uploadService = new UploadService();
+
+function setupFileUpload() {
+    const fileInput = document.getElementById('fileInput');
+    const btnAttachment = document.getElementById('btnAttachment');
+
+    if (!fileInput) return;
+
+    fileInput.addEventListener('change', async (e) => {
+        const files = Array.from(e.target.files);
+        if (files.length === 0) return;
+
+        // Reset input value to allow selecting same file again
+        e.target.value = '';
+
+        for (const file of files) {
+            await handleFileUpload(file);
+        }
+    });
+}
+
+async function handleFileUpload(file) {
+    if (!currentConversationId) {
+        showNotification('Vui lòng chọn cuộc hội thoại trước khi gửi file', 'warning');
+        return;
+    }
+
+    // Create a temporary message ID
+    const tempId = `temp-${Date.now()}`;
+    
+    // Optimistic UI: Show uploading message
+    // TODO: Add UI for uploading state if needed
+    showNotification(`Đang tải lên: ${file.name}...`, 'info');
+
+    try {
+        // Validate file
+        uploadService.validateFile(file);
+
+        // Get token
+        const token = localStorage.getItem('token');
+        if (!token) throw new Error('No auth token');
+
+        // Upload file
+        const result = await uploadService.upload(file, token, (progress) => {
+            console.log(`Upload progress for ${file.name}: ${progress}%`);
+        });
+
+        console.log('✅ Upload completed:', result);
+
+        // Send message with file info
+        // sendMessage(conversationId, content, messageType, clientMessageId, fileUrl, fileName, fileType, fileSize)
+        await window.socketHandler.sendMessage(
+            currentConversationId,
+            result.fileName || file.name, // Content is filename
+            getMsgTypeFromFile(file.type),
+            null, // clientMessageId (auto generated)
+            result.url,
+            result.fileName || file.name,
+            file.type,
+            file.size
+        );
+
+    } catch (error) {
+        console.error('❌ Upload failed:', error);
+        showNotification(`Lỗi gửi file: ${error.message}`, 'error');
+    }
+}
+
+// Helper to determine message type from MIME type
+function getMsgTypeFromFile(mimeType) {
+    console.log('📂 Detecting type for:', mimeType);
+    if (!mimeType) return 'file';
+    if (mimeType.startsWith('image/')) return 'image';
+    if (mimeType.startsWith('video/')) return 'video';
+    return 'file';
 }
 
 // Setup search box in sidebar

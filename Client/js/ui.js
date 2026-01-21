@@ -44,7 +44,7 @@ function displayMessage(message) {
 
     const clientIdAttr = message.clientMessageId ? ` data-client-id="${message.clientMessageId}"` : '';
     const timeText = message.seq
-        ? `${formatTime(message.createdAt)} • Seq: ${message.seq}`
+        ? `${formatTime(message.createdAt)}`
         : formatTime(message.createdAt);
     
     // Helper: resolve relative /uploads/... to server absolute URL
@@ -67,18 +67,22 @@ function displayMessage(message) {
     let fileHTML = '';
     if (message.fileUrl) {
         const fileUrl = resolveFileUrl(message.fileUrl);
-        if (message.messageType === 'image') {
+        // Normalized type check (backend often sends raw MIME, or we inferred it)
+        const msgType = message.messageType || message.fileType || '';
+        
+        if (msgType === 'image' || msgType.startsWith('image/')) {
             fileHTML = `
                 <div class="message-file message-image">
                     <img src="${fileUrl}" alt="${escapeHtml(message.fileName || 'Image')}" 
                          onclick="window.open('${fileUrl}', '_blank')">
                 </div>
             `;
-        } else if (message.messageType === 'video') {
+        } else if (msgType === 'video' || msgType.startsWith('video/')) {
             fileHTML = `
                 <div class="message-file message-video">
                     <video controls>
                         <source src="${fileUrl}" type="${message.fileType || 'video/mp4'}">
+                        Trình duyệt không hỗ trợ video.
                     </video>
                 </div>
             `;

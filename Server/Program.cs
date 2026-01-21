@@ -40,6 +40,10 @@ builder.Services.AddSingleton<MessageService>();
 builder.Services.AddSingleton<UserService>();
 builder.Services.AddSingleton<WsConnectionManager>();
 builder.Services.AddSingleton<SeedDataService>();
+// Register Background Service for File Cleanup
+builder.Services.AddHostedService<FileCleanupBackgroundService>();
+builder.Services.AddSingleton<UploadService>();
+
 builder.Services.AddSingleton(sp => new AuthService(
     sp.GetRequiredService<MongoDBContext>(),
     jwtSecretKey,
@@ -88,6 +92,7 @@ var seedService = app.Services.GetRequiredService<SeedDataService>();
 await seedService.SeedAsync();
 
 app.UseCors();
+app.UseStaticFiles(); // Enable serving files from wwwroot
 app.UseAuthentication();
 app.UseAuthorization();
 
