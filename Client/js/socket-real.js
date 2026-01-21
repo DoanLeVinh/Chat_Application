@@ -130,6 +130,9 @@ class SocketHandler {
                 console.log('✅ Received user_offline event:', normalizedMessage.payload);
                 this.onUserOffline(normalizedMessage.payload);
                 break;
+            case 'reaction_updated':
+                this.onReactionUpdated(normalizedMessage.payload);
+                break;
             default:
                 console.log('Unhandled message type:', normalizedMessage.type);
         }
@@ -210,6 +213,11 @@ class SocketHandler {
         return response.payload;
     }
 
+    async addReaction(conversationId, messageId, emoji) {
+        const response = await this.send('add_reaction', { conversationId, messageId, emoji });
+        return response.payload;
+    }
+
     // Event Handlers (sẽ được gán từ app.js)
     onMessageCreated(payload) {
         if (window.onMessageCreated) {
@@ -267,6 +275,12 @@ class SocketHandler {
         }
     }
 
+    onReactionUpdated(payload) {
+        if (window.onReactionUpdated) {
+            window.onReactionUpdated(payload);
+        }
+    }
+
     // Get online users
     async getOnlineUsers() {
         const response = await this.send('get_online_users', {});
@@ -287,12 +301,24 @@ class SocketHandler {
 window.socketHandler = new SocketHandler();
 
 function reactMessage(conversationId, messageId, emoji) {
-  socket.send(JSON.stringify({
-    type: "add_reaction",
-    conversationId,
-    messageId,
-    emoji
-  }));
+    // Backward-compatible helper
+    if (window.socketHandler && typeof window.socketHandler.addReaction === 'function') {
+        return window.socketHandler.addReaction(conversationId, messageId, emoji);
+    }
+    if (window.socketHandler && typeof window.socketHandler.send === 'function') {
+        return window.socketHandler.send('add_reaction', { conversationId, messageId, emoji });
+    }
 }
 window.reactMessage = reactMessage;
+
+function sendSticker(code) {
+    if (!window.currentConversationId) return;
+    if (!window.socketHandler || typeof window.socketHandler.sendMessage !== 'function') return;
+
+    const clientMessageId = "st_" + Date.now();
+    // Server expects content to be sticker code
+    window.socketHandler.sendMessage(window.currentConversationId, code, 'sticker', clientMessageId);
+    const picker = document.getElementById("stickerPicker");
+    if (picker) picker.style.display = "none";
+}
 

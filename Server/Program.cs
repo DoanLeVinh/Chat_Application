@@ -73,6 +73,7 @@ builder.Services.AddAuthentication(options =>
 });
 
 builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
 
 // Enable CORS for client (AllowAnyOrigin for LAN testing)
 builder.Services.AddCors(options =>
@@ -95,7 +96,7 @@ app.UseCors();
 app.UseStaticFiles(); // Enable serving files from wwwroot
 app.UseAuthentication();
 app.UseAuthorization();
-
+app.UseStaticFiles();
 // Enable WebSocket
 app.UseWebSockets();
 

@@ -732,3 +732,37 @@
         z-index: 10;
     }
 }
+
+.sticker-picker {
+    position: absolute;
+    bottom: 70px;
+    left: 20px;
+    width: 70%;
+    max-height: 300px;
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,.2);
+    overflow-y: auto;
+    padding: 10px;
+    z-index: 999;
+}
+
+.sticker-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+}
+
+.sticker-item {
+    cursor: pointer;
+    transition: transform .15s;
+}
+
+.sticker-item:hover {
+    transform: scale(1.1);
+}
+
+.sticker-item img {
+    width: 100%;
+}
+

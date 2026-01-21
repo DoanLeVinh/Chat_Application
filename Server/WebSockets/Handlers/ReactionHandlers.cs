@@ -2,6 +2,7 @@ using System.Text.Json;
 using ChatServer.Database;
 using ChatServer.Models;
 using ChatServer.Services;
+using MongoDB.Driver;
 
 namespace ChatServer.WebSockets.Handlers
 {
@@ -21,17 +22,23 @@ namespace ChatServer.WebSockets.Handlers
 
             if (payload == null)
             {
-                return new WsResponse { Type = "error", Payload = new { error = "Invalid payload" } };
+                return new WsResponse { Type = "error", RequestId = message.RequestId, Payload = new { error = "Invalid payload" } };
+            }
+
+            if (string.IsNullOrWhiteSpace(payload.ConversationId) || string.IsNullOrWhiteSpace(payload.MessageId) || string.IsNullOrWhiteSpace(payload.Emoji))
+            {
+                return new WsResponse { Type = "error", RequestId = message.RequestId, Payload = new { error = "Invalid payload" } };
             }
 
             // 1. Check user là member
             var isMember = await conversationService.IsMemberAsync(payload.ConversationId, userId);
             if (!isMember)
             {
-                return new WsResponse { Type = "error", Payload = new { error = "Not a member" } };
+                return new WsResponse { Type = "error", RequestId = message.RequestId, Payload = new { error = "Not a member" } };
             }
 
             // 2. Insert reaction (ignore nếu trùng)
+            var inserted = false;
             try
             {
                 await db.MessageReactions.InsertOneAsync(new MessageReaction
@@ -40,35 +47,40 @@ namespace ChatServer.WebSockets.Handlers
                     UserId = userId,
                     Emoji = payload.Emoji
                 });
+
+                inserted = true;
             }
-            catch
+            catch (MongoWriteException ex) when (ex.WriteError?.Category == ServerErrorCategory.DuplicateKey)
             {
-                // ignore duplicate
+                // Duplicate: user already reacted with same emoji -> no state change
+            }
+            catch (Exception ex)
+            {
+                return new WsResponse { Type = "error", RequestId = message.RequestId, Payload = new { error = ex.Message } };
             }
 
-            // 3. Broadcast cho các member
-            var members = await conversationService.GetMembersAsync(payload.ConversationId);
-            var userIds = members.Select(m => m.UserId).ToList();
-
-            await connectionManager.BroadcastToUsersAsync(userIds, new WsResponse
+            // 3. Broadcast cho các member (only if state actually changed)
+            if (inserted)
             {
-                Type = "reaction_updated",
-                Payload = new
+                var members = await conversationService.GetMembersAsync(payload.ConversationId);
+                var userIds = members.Select(m => m.UserId).ToList();
+
+                await connectionManager.BroadcastToUsersAsync(userIds, new WsResponse
                 {
-                    conversationId = payload.ConversationId,
-                    messageId = payload.MessageId,
-                    emoji = payload.Emoji,
-                    userId
-                }
-            });
+                    Type = "reaction_updated",
+                    Payload = new
+                    {
+                        conversationId = payload.ConversationId,
+                        messageId = payload.MessageId,
+                        emoji = payload.Emoji,
+                        userId
+                    }
+                });
+            }
 
-            return new WsResponse { Type = "add_reaction_ok" };
+            return new WsResponse { Type = "add_reaction_ok", RequestId = message.RequestId };
         }
-        
-        internal static async Task<WsResponse> HandleAddReactionAsync(WsMessage wsMessage, string userId, object db, ConversationService conversationService, WsConnectionManager wsConnectionManager)
-        {
-            throw new NotImplementedException();
-        }
+
     }
 
     public class AddReactionPayload

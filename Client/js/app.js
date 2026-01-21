@@ -139,6 +139,8 @@ function initLoginPage() {
 
 // ===== CHAT PAGE INITIALIZATION// Global state
 let currentConversationId = null;
+// Expose for ui.js helpers (top-level `let` doesn't become window property)
+window.currentConversationId = null;
 let currentConversations = [];
 let onlineUsers = new Set();
 let userLastSeen = new Map(); // Store last seen timestamps for offline users
@@ -374,7 +376,17 @@ function setupWebSocketHandlers() {
     window.onConversationCreated = (payload) => {
         console.log('🆕 Conversation created:', payload);
         loadConversations(); // Reload conversation list
-        showNotification('Tạo nhóm thành công', 'success');
+        const currentUserId = localStorage.getItem('userId');
+        const title = payload?.title || 'cuộc trò chuyện';
+        if (payload?.type === 'group') {
+            if (payload?.createdBy && payload.createdBy === currentUserId) {
+                showNotification(`Đã tạo nhóm: ${title}`, 'success');
+            } else {
+                showNotification(`Bạn được thêm vào nhóm: ${title}`, 'info');
+            }
+        } else {
+            showNotification('Có cuộc trò chuyện mới', 'info');
+        }
     };
 
     // Handle member added
@@ -423,6 +435,22 @@ function setupWebSocketHandlers() {
             }
             console.log('📴 Online users now:', Array.from(onlineUsers));
             updateOnlineIndicators();
+        }
+    };
+
+    // Handle reaction updates
+    window.onReactionUpdated = (payload) => {
+        try {
+            const conversationId = payload?.conversationId || payload?.ConversationId;
+            const messageId = payload?.messageId || payload?.MessageId;
+            const emoji = payload?.emoji || payload?.Emoji;
+            if (!conversationId || !messageId || !emoji) return;
+            if (conversationId !== currentConversationId) return;
+            if (typeof window.updateMessageReactionsUI === 'function') {
+                window.updateMessageReactionsUI(messageId, emoji, 1);
+            }
+        } catch (e) {
+            console.error('reaction_updated handler error:', e);
         }
     };
 }
@@ -608,6 +636,7 @@ function getTimeAgo(timestamp) {
 
 async function openConversation(conversationId) {
     currentConversationId = conversationId;
+    window.currentConversationId = conversationId;
     
     const conv = currentConversations.find(c => c.conversationId === conversationId);
     if (!conv) return;
@@ -1008,12 +1037,13 @@ function openCreateGroupModal() {
     // Setup member search
     setupMemberSearch();
 
-    // Close handlers
-    document.getElementById('closeGroupModal')?.addEventListener('click', closeCreateGroupModal);
-    document.getElementById('cancelGroupModal')?.addEventListener('click', closeCreateGroupModal);
-    
-    // Create group handler
-    document.getElementById('confirmCreateGroup')?.addEventListener('click', createGroup);
+    // Handlers (avoid stacking listeners each time modal opens)
+    const closeBtn = document.getElementById('closeGroupModal');
+    const cancelBtn = document.getElementById('cancelGroupModal');
+    const confirmBtn = document.getElementById('confirmCreateGroup');
+    if (closeBtn) closeBtn.onclick = closeCreateGroupModal;
+    if (cancelBtn) cancelBtn.onclick = closeCreateGroupModal;
+    if (confirmBtn) confirmBtn.onclick = createGroup;
 }
 
 function closeCreateGroupModal() {
@@ -1041,7 +1071,18 @@ function createGroup() {
 
     // Send create_group via WebSocket
     const currentUserId = localStorage.getItem('userId');
-    const memberIds = [currentUserId, ...selectedMembers.map(m => m.id)];
+    if (!currentUserId) {
+        showNotification('Bạn chưa đăng nhập hoặc phiên đăng nhập đã hết hạn', 'error');
+        return;
+    }
+
+    // Sanitize memberIds: remove null/empty + unique
+    const rawMemberIds = [currentUserId, ...selectedMembers.map(m => m?.id)];
+    const memberIds = Array.from(new Set(rawMemberIds.filter(id => typeof id === 'string' && id.trim().length > 0)));
+    if (memberIds.length < 2) {
+        showNotification('Danh sách thành viên không hợp lệ', 'error');
+        return;
+    }
     
     // Use createGroup instead of createConversation
     window.socketHandler.createGroup(groupName, memberIds)
@@ -1081,7 +1122,7 @@ function formatTime(isoString) {
 function updateConversationLastMessage(conversationId, content) {
     const conv = currentConversations.find(c => c.conversationId === conversationId);
     if (conv) {
-        conv.lastMessage = content;
+        conv.lastMessagePreview = content;
         conv.updatedAt = new Date().toISOString();
         displayConversations(currentConversations);
     }
@@ -1489,5 +1530,3 @@ function updateSelectedMembersUI() {
 }
 
 console.log('Chat Application loaded');
-
-

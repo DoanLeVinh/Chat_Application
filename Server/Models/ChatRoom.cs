@@ -30,6 +30,7 @@ namespace ChatServer.Models
         /// Format: min(userA,userB):max(userA,userB)
         /// </summary>
         [BsonElement("directKey")]
+        [BsonIgnoreIfNull]
         public string? DirectKey { get; set; } // Unique cho direct chat
 
         [BsonElement("createdAt")]

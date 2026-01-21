@@ -200,7 +200,18 @@ namespace ChatServer.WebSockets
                             }
                             else
                             {
-                                response = await MessageHandlers.HandleGetMessagesAsync(wsMessage, userId, conversationService, messageService, userService);
+                                response = await MessageHandlers.HandleGetMessagesAsync(wsMessage, userId, conversationService, messageService, userService, db);
+                            }
+                            break;
+
+                        case "add_reaction":
+                            if (userId == null)
+                            {
+                                response = new WsResponse { Type = "error", RequestId = wsMessage.RequestId, Payload = new { error = "Not authenticated" } };
+                            }
+                            else
+                            {
+                                response = await ReactionHandlers.HandleAddReactionAsync(wsMessage, userId, db, conversationService, manager);
                             }
                             break;
 
