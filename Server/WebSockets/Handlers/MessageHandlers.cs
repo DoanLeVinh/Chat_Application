@@ -43,7 +43,8 @@ namespace ChatServer.WebSockets.Handlers
                     userId,
                     payload.Content,
                     payload.MessageType ?? "text",
-                    payload.ClientMessageId ?? Guid.NewGuid().ToString()
+                    payload.ClientMessageId ?? Guid.NewGuid().ToString(),
+                    payload.FileUrl // Truyền fileUrl từ client
                 );
 
                 // Lấy thông tin sender
@@ -58,6 +59,7 @@ namespace ChatServer.WebSockets.Handlers
                     senderDisplayName = senderDisplayName,
                     messageType = newMessage.Type,
                     content = newMessage.Content,
+                    fileUrl = newMessage.FileUrl, // URL của file đính kèm (image/video/file)
                     clientMessageId = newMessage.ClientMessageId, // Để frontend reconcile optimistic rendering
                     seq = newMessage.Seq,
                     createdAt = newMessage.CreatedAt
@@ -178,6 +180,7 @@ namespace ChatServer.WebSockets.Handlers
         public string Content { get; set; } = "";
         public string? MessageType { get; set; }
         public string? ClientMessageId { get; set; }
+        public string? FileUrl { get; set; } // URL của file đính kèm (image/video/file)
     }
 
     public class GetMessagesPayload

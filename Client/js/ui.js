@@ -87,6 +87,9 @@ function displayMessage(message) {
                 <div class="message-file message-image">
                     <img src="${fileUrl}" alt="${escapeHtml(message.fileName || 'Image')}" 
                          onclick="window.open('${fileUrl}', '_blank')">
+                    <div class="message-file-actions">
+                        <a href="${fileUrl}" class="file-download-btn" download>Tải xuống</a>
+                    </div>
                 </div>
             `;
         } else if (msgType === 'video' || msgType.startsWith('video/')) {
@@ -96,6 +99,9 @@ function displayMessage(message) {
                         <source src="${fileUrl}" type="${message.fileType || 'video/mp4'}">
                         Trình duyệt không hỗ trợ video.
                     </video>
+                    <div class="message-file-actions">
+                        <a href="${fileUrl}" class="file-download-btn" download>Tải xuống</a>
+                    </div>
                 </div>
             `;
         } else {
@@ -105,12 +111,17 @@ function displayMessage(message) {
             
             fileHTML = `
                 <div class="message-file">
-                    <div class="message-file-item" onclick="window.open('${fileUrl}', '_blank')">
-                        <div class="file-icon">${icon}</div>
-                        <div class="file-info">
-                            <div class="file-name">${escapeHtml(message.fileName || 'File')}</div>
-                            ${size ? `<div class="file-size">${size}</div>` : ''}
+                    <div class="message-file-item">
+                        <div class="file-main" onclick="window.open('${fileUrl}', '_blank')">
+                            <div class="file-icon">${icon}</div>
+                            <div class="file-info">
+                                <div class="file-name">${escapeHtml(message.fileName || 'File')}</div>
+                                ${size ? `<div class="file-size">${size}</div>` : ''}
+                            </div>
                         </div>
+                        <a href="${fileUrl}" class="file-download-btn" download>
+                            Tải xuống
+                        </a>
                     </div>
                 </div>
             `;
@@ -132,9 +143,27 @@ function displayMessage(message) {
 
     // Nếu là tin nhắn đính kèm và content chỉ là tên file thì không render phần text để tránh bị lặp
     // Nếu là sticker thì cũng không render text (chỉ hiển thị sticker image)
-    const shouldRenderText = !!(message.content && String(message.content).trim())
-        && !(message.fileUrl && message.fileName && String(message.content).trim() === String(message.fileName).trim())
-        && msgType !== 'sticker'; // Không hiển thị text khi là sticker
+    const contentText = message.content != null ? String(message.content) : '';
+    const contentTrim = contentText.trim();
+    const isMediaMessage = (msgType === 'image' || msgType.startsWith('image/')
+        || msgType === 'video' || msgType.startsWith('video/'));
+
+    const shouldRenderText = !!contentTrim
+        && !(message.fileUrl && message.fileName && contentTrim === String(message.fileName).trim())
+        && msgType !== 'sticker' // Không hiển thị text khi là sticker
+        // Ẩn toàn bộ text đối với ảnh / video khi có fileUrl (không hiển thị tên file)
+        && !(isMediaMessage && !!message.fileUrl);
+
+    // Nếu content có vẻ chỉ là tên file quá dài -> clamp lại để không vỡ layout
+    const looksLikeFileNameOnly =
+        !!message.fileUrl &&
+        msgType !== 'text' &&
+        msgType !== 'sticker' &&
+        contentTrim.length > 40 &&
+        !contentTrim.includes('\n') &&
+        /\.[a-z0-9]{1,8}$/i.test(contentTrim);
+
+    const messageTextClass = looksLikeFileNameOnly ? 'message-text message-attachment-name' : 'message-text';
 
 
     const renderReactions = (reactions) => {
@@ -154,13 +183,12 @@ function displayMessage(message) {
             ${!isOwn ? `<img src="assets/images/default-avatar.svg" class="avatar" alt="Avatar">` : ''}
             <div class="message-content">
                 ${!isOwn ? `<div class="message-sender">${escapeHtml(senderName)}</div>` : ''}
-                ${shouldRenderText ? `<div class="message-text">${escapeHtml(message.content)}</div>` : ''}
+                ${shouldRenderText ? `<div class="${messageTextClass}">${escapeHtml(message.content)}</div>` : ''}
                 ${fileHTML}
                 ${progressHTML}
                 <div class="message-reactions">${renderReactions(message.reactions)}</div>
                 <div class="message-time">${timeText}</div>
             </div>
-            ${isOwn ? `<img src="assets/images/default-avatar.svg" class="avatar" alt="Avatar">` : ''}
         </div>
     `;
     

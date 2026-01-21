@@ -295,6 +295,9 @@ function setupWebSocketHandlers() {
                             attachmentHTML = `
                                 <div class="message-file message-image">
                                     <img src="${safeUrl}" alt="${escapeHtml(payload.fileName || 'Image')}" onclick="window.open('${safeUrl}', '_blank')">
+                                    <div class="message-file-actions">
+                                        <a href="${safeUrl}" class="file-download-btn" download>Tải xuống</a>
+                                    </div>
                                 </div>
                             `;
                         } else if (payload.messageType === 'video') {
@@ -303,19 +306,28 @@ function setupWebSocketHandlers() {
                                     <video controls>
                                         <source src="${safeUrl}" type="${payload.fileType || 'video/mp4'}">
                                     </video>
+                                    <div class="message-file-actions">
+                                        <a href="${safeUrl}" class="file-download-btn" download>Tải xuống</a>
+                                    </div>
                                 </div>
                             `;
                         } else {
-                            const icon = (new UploadService()).getFileIcon(payload.fileType || '');
-                            const size = payload.fileSize ? (new UploadService()).formatFileSize(payload.fileSize) : '';
+                            const uploadSvc = new UploadService();
+                            const icon = uploadSvc.getFileIcon(payload.fileType || '');
+                            const size = payload.fileSize ? uploadSvc.formatFileSize(payload.fileSize) : '';
                             attachmentHTML = `
                                 <div class="message-file">
-                                    <div class="message-file-item" onclick="window.open('${safeUrl}', '_blank')">
-                                        <div class="file-icon">${icon}</div>
-                                        <div class="file-info">
-                                            <div class="file-name">${escapeHtml(payload.fileName || 'File')}</div>
-                                            ${size ? `<div class=\"file-size\">${size}</div>` : ''}
+                                    <div class="message-file-item">
+                                        <div class="file-main" onclick="window.open('${safeUrl}', '_blank')">
+                                            <div class="file-icon">${icon}</div>
+                                            <div class="file-info">
+                                                <div class="file-name">${escapeHtml(payload.fileName || 'File')}</div>
+                                                ${size ? `<div class=\"file-size\">${size}</div>` : ''}
+                                            </div>
                                         </div>
+                                        <a href="${safeUrl}" class="file-download-btn" download>
+                                            Tải xuống
+                                        </a>
                                     </div>
                                 </div>
                             `;
@@ -732,7 +744,6 @@ function renderMessages(messages) {
                         ${msg.content ? `<div class="message-text">${escapeHtml(msg.content)}</div>` : ''}
                         <div class="message-time">${time} • Seq: ${msg.seq}</div>
                     </div>
-                    ${isOwn ? '<img src="assets/images/default-avatar.svg" class="avatar" alt="Avatar">' : ''}
                 </div>
             `;
         }).join('');

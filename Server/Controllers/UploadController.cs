@@ -27,10 +27,10 @@ namespace ChatServer.Controllers
                 return BadRequest(new { error = "Invalid file info" });
             }
 
-            // Max size check (Backend side double check) - 5MB
-            if (request.FileSize > 5 * 1024 * 1024)
+            // Max size check (Backend side double check) - 100MB
+            if (request.FileSize > 100 * 1024 * 1024)
             {
-                return BadRequest(new { error = "File too large (Max 5MB)" });
+                return BadRequest(new { error = "File too large (Max 100MB)" });
             }
 
             try

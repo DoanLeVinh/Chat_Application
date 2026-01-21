@@ -290,32 +290,13 @@ class UploadService {
      * Validate file
      */
     validateFile(file) {
-        const maxSize = 5 * 1024 * 1024; // 5MB (Reduced from 100MB to save storage)
-        const allowedTypes = [
-            // Images
-            'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml',
-            // Videos (Removed video/mp4 etc to save space, but keeping them for now as user only asked for "Way 2")
-            // Actually user asked for "Way 2" which implies limits. I will keep video types but size limit 5MB effectively blocks most videos.
-            'video/mp4', 'video/webm', 'video/ogg', 'video/quicktime', 'video/x-msvideo',
-            // Documents
-            'application/pdf',
-            'application/msword',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            'application/vnd.ms-excel',
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            'application/zip',
-            'application/x-rar-compressed',
-            'text/plain'
-        ];
+        const maxSize = 100 * 1024 * 1024; // 100MB - cho phép video và nhiều loại file hơn
 
         if (file.size > maxSize) {
-            throw new Error(`File quá lớn. Tối đa 5MB để tiết kiệm dung lượng server.`);
+            throw new Error(`File quá lớn. Tối đa 100MB.`);
         }
 
-        if (!allowedTypes.includes(file.type)) {
-            throw new Error(`Loại file không được hỗ trợ: ${file.type}`);
-        }
-
+        // Không giới hạn theo MIME type nữa để cho phép mọi loại file
         return true;
     }
 

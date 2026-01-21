@@ -45,7 +45,7 @@ namespace ChatServer.Services
         /// <summary>
         /// Tạo message mới với seq tăng dần (CORE logic - Người 2)
         /// </summary>
-        public async Task<Message> CreateMessageAsync(string conversationId, string senderId, string content, string type, string clientMessageId)
+        public async Task<Message> CreateMessageAsync(string conversationId, string senderId, string content, string type, string clientMessageId, string? fileUrl = null)
         {
             // Kiểm tra trùng clientMessageId
             var existing = await _messages.Find(m => 
@@ -95,6 +95,7 @@ namespace ChatServer.Services
                 SenderId = senderId,
                 Type = type,
                 Content = content,
+                FileUrl = fileUrl, // Lưu URL file đính kèm (nếu có)
                 ClientMessageId = clientMessageId,
                 Seq = conversation.LastSeq,
                 CreatedAt = now
