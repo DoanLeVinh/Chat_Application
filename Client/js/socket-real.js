@@ -330,8 +330,30 @@ function sendSticker(code) {
     if (!window.socketHandler || typeof window.socketHandler.sendMessage !== 'function') return;
 
     const clientMessageId = "st_" + Date.now();
-    // Server expects content to be sticker code
+    
+    // === OPTIMISTIC RENDERING: Hiển thị sticker ngay lập tức ===
+    const currentUserId = localStorage.getItem('userId');
+    const userName = localStorage.getItem('userName') || 'You';
+    
+    // Render sticker ngay trong UI
+    if (typeof window.displayMessage === 'function') {
+        window.displayMessage({
+            messageId: 'pending:' + clientMessageId, // Temporary ID
+            clientMessageId: clientMessageId,
+            conversationId: window.currentConversationId,
+            senderId: currentUserId,
+            senderDisplayName: userName,
+            content: code,
+            messageType: 'sticker',
+            createdAt: new Date().toISOString(),
+            seq: null // Sẽ được cập nhật khi server phản hồi
+        });
+    }
+    
+    // Gửi message lên server
     window.socketHandler.sendMessage(window.currentConversationId, code, 'sticker', clientMessageId);
+    
+    // Đóng sticker picker
     const picker = document.getElementById("stickerPicker");
     if (picker) picker.style.display = "none";
 }
