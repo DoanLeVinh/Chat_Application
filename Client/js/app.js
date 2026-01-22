@@ -235,7 +235,11 @@ function setupEventListeners() {
     document.getElementById('btnChatInfo')?.addEventListener('click', () => {
         const panel = document.getElementById('rightPanel');
         if (panel) {
-            panel.style.display = panel.style.display === 'none' ? 'flex' : 'none';
+            const willOpen = panel.style.display === 'none';
+            panel.style.display = willOpen ? 'flex' : 'none';
+            if (willOpen) {
+                refreshGroupInfoPanel();
+            }
         }
     });
 
@@ -243,6 +247,14 @@ function setupEventListeners() {
     document.getElementById('btnClosePanel')?.addEventListener('click', () => {
         document.getElementById('rightPanel').style.display = 'none';
     });
+
+    // Add member (in right panel)
+    document.getElementById('btnAddMember')?.addEventListener('click', () => {
+        openAddMemberModal();
+    });
+
+    // Setup add member modal once
+    setupAddMemberModal();
 
     // Tab switching
     document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -265,9 +277,18 @@ function setupWebSocketHandlers() {
         console.log('📍 Current conversation:', currentConversationId);
         console.log('📍 Message conversation:', payload.conversationId);
 
+        const resolveSenderId = (p) => {
+            const raw = p?.senderId ?? p?.SenderId ?? p?.senderUserId ?? p?.SenderUserId ?? p?.fromUserId ?? p?.FromUserId ?? p?.userId ?? p?.UserId ?? p?.sender?.id ?? p?.sender?.Id ?? '';
+            return String(raw || '').trim();
+        };
+        const resolveSenderName = (p) => {
+            return p?.senderDisplayName || p?.SenderDisplayName || p?.senderName || p?.SenderName || p?.sender?.displayName || p?.sender?.DisplayName || resolveSenderId(p);
+        };
+        const senderId = resolveSenderId(payload);
+
         // If this is our own optimistic message, reconcile the pending UI element
-        const currentUserId = localStorage.getItem('userId');
-        if (payload && payload.clientMessageId && payload.senderId === currentUserId) {
+        const currentUserId = String(localStorage.getItem('userId') || '').trim();
+        if (payload && payload.clientMessageId && senderId && senderId === currentUserId) {
             console.log('🔄 Reconciling optimistic message:', payload.clientMessageId);
             const pendingEl = document.querySelector(`.message[data-client-id="${payload.clientMessageId}"]`);
             if (pendingEl) {
@@ -382,7 +403,7 @@ function setupWebSocketHandlers() {
         
         // Show notification nếu không phải conversation hiện tại
         if (payload.conversationId !== currentConversationId) {
-            const fromName = payload.senderDisplayName || payload.senderId;
+            const fromName = resolveSenderName(payload);
             showNotification(`Tin nhắn mới từ ${fromName}`, 'info');
         }
     };
@@ -407,16 +428,120 @@ function setupWebSocketHandlers() {
     // Handle member added
     window.onMemberAdded = (payload) => {
         console.log('➕ Member added:', payload);
-        if (payload.conversationId === currentConversationId) {
-            // TODO: Update member list in right panel
+        try {
+            const conversationId = payload?.conversationId;
+            if (!conversationId) return;
+
+            const conv = currentConversations.find(c => c.conversationId === conversationId);
+            if (conv) {
+                const u = payload.user || {};
+                const userId = u.id || payload.userId;
+                if (userId && Array.isArray(conv.members)) {
+                    const exists = conv.members.some(m => m.id === userId);
+                    if (!exists) {
+                        const normalized = normalizeMember({
+                            id: userId,
+                            displayName: u.displayName || userId,
+                            role: payload.role || 'member',
+                            joinedAt: payload.joinedAt || new Date().toISOString(),
+                            isOnline: !!u.isOnline,
+                            lastSeenAt: u.lastSeenAt || null,
+                            avatarUrl: u.avatarUrl || null
+                        });
+                        if (normalized) conv.members.push(normalized);
+                    }
+                }
+                if (payload.membersVersion != null) {
+                    conv.membersVersion = payload.membersVersion;
+                }
+            }
+
+            // Update header count if current
+            if (conversationId === currentConversationId) {
+                const chatMembers = document.getElementById('chatMembers');
+                if (chatMembers) {
+                    const conv2 = currentConversations.find(c => c.conversationId === conversationId);
+                    const memberCount = conv2?.members?.length || 0;
+                    chatMembers.textContent = `${memberCount} thành viên`;
+                }
+            }
+
+            if (isRightPanelOpen() && conversationId === currentConversationId) {
+                refreshGroupInfoPanel();
+            }
+
+            const actorName = payload?.addedBy?.displayName || payload?.addedBy?.id;
+            const addedName = payload?.user?.displayName || payload?.user?.id || payload?.userId;
+            if (actorName && addedName) {
+                showNotification(`${actorName} đã thêm ${addedName} vào nhóm`, 'info');
+            }
+        } catch (e) {
+            console.error('❌ onMemberAdded handler error:', e);
         }
     };
 
     // Handle member removed
     window.onMemberRemoved = (payload) => {
         console.log('➖ Member removed:', payload);
-        if (payload.conversationId === currentConversationId) {
-            // TODO: Update member list in right panel
+        try {
+            const conversationId = payload?.conversationId;
+            const removedUserId = payload?.userId;
+            if (!conversationId || !removedUserId) return;
+
+            const conv = currentConversations.find(c => c.conversationId === conversationId);
+            if (conv && Array.isArray(conv.members)) {
+                conv.members = conv.members.filter(m => m.id !== removedUserId);
+                if (payload.membersVersion != null) {
+                    conv.membersVersion = payload.membersVersion;
+                }
+            }
+
+            // Update header count if current
+            if (conversationId === currentConversationId) {
+                const chatMembers = document.getElementById('chatMembers');
+                if (chatMembers) {
+                    const conv2 = currentConversations.find(c => c.conversationId === conversationId);
+                    const memberCount = conv2?.members?.length || 0;
+                    chatMembers.textContent = `${memberCount} thành viên`;
+                }
+            }
+
+            if (isRightPanelOpen() && conversationId === currentConversationId) {
+                refreshGroupInfoPanel();
+            }
+
+            const actorName = payload?.removedBy?.displayName || payload?.removedBy?.id;
+            if (actorName) {
+                showNotification(`${actorName} đã xóa một thành viên khỏi nhóm`, 'info');
+            }
+        } catch (e) {
+            console.error('❌ onMemberRemoved handler error:', e);
+        }
+    };
+
+    // Handle kicked (current user removed)
+    window.onKicked = (payload) => {
+        try {
+            const conversationId = payload?.conversationId;
+            if (!conversationId) return;
+
+            // Remove from local list
+            currentConversations = currentConversations.filter(c => c.conversationId !== conversationId);
+            displayConversations(currentConversations);
+
+            // If currently open, close it
+            if (currentConversationId === conversationId) {
+                currentConversationId = null;
+                window.currentConversationId = null;
+                document.getElementById('activeChat').style.display = 'none';
+                document.getElementById('emptyChat').style.display = 'flex';
+                document.getElementById('rightPanel').style.display = 'none';
+            }
+
+            const actorName = payload?.removedBy?.displayName || payload?.removedBy?.id;
+            showNotification(actorName ? `Bạn đã bị xóa khỏi nhóm bởi ${actorName}` : 'Bạn đã bị xóa khỏi nhóm', 'error');
+        } catch (e) {
+            console.error('❌ onKicked handler error:', e);
         }
     };
 
@@ -706,6 +831,11 @@ async function openConversation(conversationId) {
         }
     }
 
+    // If right panel is open, keep it in sync
+    if (isRightPanelOpen()) {
+        refreshGroupInfoPanel();
+    }
+
     // Load messages
     try {
         const messages = await window.socketHandler.getMessages(conversationId);
@@ -731,11 +861,13 @@ function renderMessages(messages) {
         }
     } else {
         // Fallback: if ui.js not loaded for some reason
-        const currentUserId = localStorage.getItem('userId');
+        const currentUserId = String(localStorage.getItem('userId') || '').trim();
         messagesArea.innerHTML = list.map(msg => {
-            const isOwn = msg.senderId === currentUserId;
+            const senderIdRaw = msg?.senderId ?? msg?.SenderId ?? msg?.senderUserId ?? msg?.SenderUserId ?? msg?.fromUserId ?? msg?.FromUserId ?? msg?.userId ?? msg?.UserId ?? msg?.sender?.id ?? msg?.sender?.Id ?? '';
+            const senderId = String(senderIdRaw || '').trim();
+            const isOwn = !!senderId && !!currentUserId && senderId === currentUserId;
             const time = formatTime(msg.createdAt);
-            const senderName = msg.senderDisplayName || msg.senderId;
+            const senderName = msg.senderDisplayName || msg.SenderDisplayName || msg.senderName || msg.SenderName || msg.sender?.displayName || msg.sender?.DisplayName || senderId;
             return `
                 <div class="message ${isOwn ? 'own' : 'other'}">
                     ${!isOwn ? '<img src="assets/images/default-avatar.svg" class="avatar" alt="Avatar">' : ''}
@@ -748,6 +880,324 @@ function renderMessages(messages) {
             `;
         }).join('');
         messagesArea.scrollTop = messagesArea.scrollHeight;
+    }
+}
+
+// ===== GROUP INFO PANEL (Members) =====
+function normalizeMember(m) {
+    if (!m) return null;
+    const id = m.id || m.userId || m.UserId || '';
+    if (!id) return null;
+    const roleRaw = m.role || m.Role || 'member';
+    return {
+        id: String(id),
+        displayName: m.displayName || m.DisplayName || m.name || m.Name || String(id),
+        role: String(roleRaw || 'member').toLowerCase(),
+        joinedAt: m.joinedAt || m.JoinedAt || null,
+        isOnline: !!(m.isOnline ?? m.IsOnline),
+        lastSeenAt: m.lastSeenAt || m.LastSeenAt || null,
+        avatarUrl: m.avatarUrl || m.AvatarUrl || null
+    };
+}
+
+function getRoleLabel(role) {
+    const r = String(role || 'member').toLowerCase();
+    if (r === 'owner') return 'Quản trị viên • người lập nhóm';
+    if (r === 'admin') return 'Quản trị viên';
+    return 'Thành viên';
+}
+
+function getRoleRank(role) {
+    const r = String(role || 'member').toLowerCase();
+    if (r === 'owner') return 0;
+    if (r === 'admin') return 1;
+    return 2;
+}
+
+function isRightPanelOpen() {
+    const panel = document.getElementById('rightPanel');
+    if (!panel) return false;
+    return panel.style.display !== 'none' && panel.style.display !== '';
+}
+
+async function refreshGroupInfoPanel() {
+    try {
+        const panel = document.getElementById('rightPanel');
+        if (!panel) return;
+
+        const conversationId = currentConversationId;
+        const conv = currentConversations.find(c => c.conversationId === conversationId);
+
+        // Nếu không chọn conversation hoặc không phải group thì ẩn panel
+        if (!conversationId || !conv || conv.type !== 'group') {
+            panel.style.display = 'none';
+            return;
+        }
+
+        // Header info
+        const groupNameEl = document.getElementById('groupName');
+        if (groupNameEl) groupNameEl.textContent = conv.title || 'Nhóm';
+
+        const memberCountEl = document.getElementById('memberCount');
+        const membersListEl = document.getElementById('membersList');
+        if (!memberCountEl || !membersListEl) return;
+
+        membersListEl.innerHTML = '<div class="member-search-empty">Đang tải...</div>';
+
+        let members = [];
+        let membersVersion = conv.membersVersion;
+        if (window.socketHandler?.getMembers) {
+            const res = await window.socketHandler.getMembers(conversationId);
+            members = res?.members || [];
+            membersVersion = res?.membersVersion ?? membersVersion;
+        } else {
+            members = conv.members || [];
+        }
+
+        // Update local cache (normalize to avoid role/permission bugs)
+        conv.members = (Array.isArray(members) ? members : [])
+            .map(normalizeMember)
+            .filter(Boolean);
+        if (membersVersion != null) conv.membersVersion = membersVersion;
+
+        memberCountEl.textContent = String(conv.members.length);
+
+        // Permission
+        const currentUserId = localStorage.getItem('userId');
+        const me = conv.members.find(m => String(m.id) === String(currentUserId));
+        const myRole = String(me?.role || 'member').toLowerCase();
+
+        const inviteMode = String(conv.inviteMode || conv.InviteMode || 'public').trim().toLowerCase();
+        const canAddMember = !!me && (inviteMode === 'public' || myRole === 'owner');
+
+        // Add member button enable/disable
+        const btnAddMember = document.getElementById('btnAddMember');
+        if (btnAddMember) {
+            btnAddMember.disabled = !canAddMember;
+            btnAddMember.title = btnAddMember.disabled
+                ? (inviteMode === 'private'
+                    ? 'Chỉ người lập nhóm mới có quyền thêm thành viên (nhóm riêng tư)'
+                    : 'Bạn không có quyền thêm thành viên')
+                : '';
+        }
+
+        const sortedMembers = conv.members
+            .slice()
+            .sort((a, b) => {
+                const ra = getRoleRank(a.role);
+                const rb = getRoleRank(b.role);
+                if (ra !== rb) return ra - rb;
+                return String(a.displayName || a.id).localeCompare(String(b.displayName || b.id), 'vi');
+            });
+
+        membersListEl.innerHTML = sortedMembers.map(m => {
+            const role = String(m.role || 'member').toLowerCase();
+            const isOnline = !!m.isOnline;
+            const statusText = isOnline ? '🟢 Online' : '⚫ Offline';
+            const roleLabel = getRoleLabel(role);
+            const canKick = canKickMember(myRole, role, currentUserId, m.id);
+            const safeName = escapeHtml(m.displayName || m.id);
+            const safeRoleLabel = escapeHtml(roleLabel);
+
+            return `
+                <div class="member-item">
+                    <img src="assets/images/default-avatar.svg" alt="Avatar" class="avatar">
+                    <div class="member-info">
+                        <div class="member-name">${safeName}</div>
+                        <div class="member-role">${statusText} • ${safeRoleLabel}</div>
+                    </div>
+                    <div class="member-actions">
+                        ${canKick ? `<button class="btn-secondary" onclick="removeMemberFromGroup('${m.id}')">Xóa</button>` : ''}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } catch (error) {
+        console.error('❌ refreshGroupInfoPanel error:', error);
+        const membersListEl = document.getElementById('membersList');
+        if (membersListEl) {
+            membersListEl.innerHTML = '<div class="member-search-empty">Không thể tải danh sách thành viên</div>';
+        }
+    }
+}
+
+function canKickMember(myRole, targetRole, myUserId, targetUserId) {
+    if (!myUserId || !targetUserId) return false;
+    if (myUserId === targetUserId) return false;
+    if (targetRole === 'owner') return false;
+    return String(myRole || '').toLowerCase() === 'owner';
+}
+
+async function removeMemberFromGroup(targetUserId) {
+    if (!currentConversationId || !targetUserId) return;
+    const ok = confirm('Bạn có chắc muốn xóa thành viên này khỏi nhóm?');
+    if (!ok) return;
+    try {
+        await window.socketHandler.removeMember(currentConversationId, targetUserId);
+        // Realtime event sẽ update UI; refresh nhẹ để chắc chắn
+        if (isRightPanelOpen()) {
+            refreshGroupInfoPanel();
+        }
+    } catch (error) {
+        console.error('❌ removeMemberFromGroup error:', error);
+        showNotification(error?.message || 'Không thể xóa thành viên', 'error');
+    }
+}
+
+// expose for inline onclick
+window.removeMemberFromGroup = removeMemberFromGroup;
+
+// ===== ADD MEMBER MODAL =====
+let addMemberSelectedUser = null;
+const addMemberCandidatesById = new Map();
+
+function setupAddMemberModal() {
+    const modal = document.getElementById('addMemberModal');
+    if (!modal) return;
+
+    const closeBtn = document.getElementById('closeAddMemberModal');
+    const cancelBtn = document.getElementById('cancelAddMemberModal');
+    const confirmBtn = document.getElementById('confirmAddMember');
+    const input = document.getElementById('addMemberSearchInput');
+    const results = document.getElementById('addMemberSearchResults');
+
+    if (closeBtn) closeBtn.onclick = closeAddMemberModal;
+    if (cancelBtn) cancelBtn.onclick = closeAddMemberModal;
+    if (confirmBtn) confirmBtn.onclick = confirmAddMember;
+
+    if (input && results) {
+        const handleSearch = debounce(async () => {
+            const q = input.value.trim();
+            addMemberSelectedUser = null;
+            addMemberCandidatesById.clear();
+            if (confirmBtn) confirmBtn.disabled = true;
+
+            if (q.length < 2) {
+                results.innerHTML = '<div class="member-search-empty">Nhập tên hoặc email để tìm kiếm</div>';
+                return;
+            }
+
+            results.innerHTML = '<div class="member-search-empty">Đang tìm kiếm...</div>';
+            const users = await searchUsers(q);
+            displayAddMemberSearchResults(users);
+        }, 300);
+
+        input.addEventListener('input', handleSearch);
+    }
+}
+
+function openAddMemberModal() {
+    const modal = document.getElementById('addMemberModal');
+    if (!modal) return;
+
+    const conv = currentConversations.find(c => c.conversationId === currentConversationId);
+    if (!conv || conv.type !== 'group') {
+        showNotification('Chỉ có thể thêm thành viên trong nhóm', 'warning');
+        return;
+    }
+
+    // Check permission locally (server vẫn kiểm tra)
+    const currentUserId = localStorage.getItem('userId');
+    const me = conv.members?.map(normalizeMember).filter(Boolean).find(m => String(m.id) === String(currentUserId));
+    const myRole = String(me?.role || 'member').toLowerCase();
+    const inviteMode = String(conv.inviteMode || conv.InviteMode || 'public').trim().toLowerCase();
+    const canAddMember = !!me && (inviteMode === 'public' || myRole === 'owner');
+    if (!canAddMember) {
+        showNotification(inviteMode === 'private'
+            ? 'Nhóm riêng tư: chỉ người lập nhóm mới có thể thêm thành viên'
+            : 'Bạn không có quyền thêm thành viên', 'error');
+        return;
+    }
+
+    addMemberSelectedUser = null;
+    addMemberCandidatesById.clear();
+    const input = document.getElementById('addMemberSearchInput');
+    const results = document.getElementById('addMemberSearchResults');
+    const confirmBtn = document.getElementById('confirmAddMember');
+    if (input) input.value = '';
+    if (results) results.innerHTML = '<div class="member-search-empty">Nhập tên hoặc email để tìm kiếm</div>';
+    if (confirmBtn) confirmBtn.disabled = true;
+
+    modal.classList.add('show');
+    modal.style.display = 'flex';
+}
+
+function closeAddMemberModal() {
+    const modal = document.getElementById('addMemberModal');
+    if (!modal) return;
+    modal.classList.remove('show');
+    modal.style.display = 'none';
+    addMemberSelectedUser = null;
+}
+
+function displayAddMemberSearchResults(users) {
+    const results = document.getElementById('addMemberSearchResults');
+    if (!results) return;
+
+    const currentUserId = localStorage.getItem('userId');
+    const conv = currentConversations.find(c => c.conversationId === currentConversationId);
+    const existingIds = new Set((conv?.members || []).map(m => m.id));
+
+    const filtered = (users || [])
+        .filter(u => u && u.id && u.id !== currentUserId)
+        .filter(u => !existingIds.has(u.id));
+
+    if (filtered.length === 0) {
+        results.innerHTML = '<div class="member-search-empty">Không tìm thấy người dùng có thể thêm</div>';
+        return;
+    }
+
+    addMemberCandidatesById.clear();
+    filtered.forEach(u => addMemberCandidatesById.set(String(u.id), String(u.displayName || u.id)));
+
+    results.innerHTML = filtered.map(u => {
+        const safeName = escapeHtml(u.displayName || u.id);
+        return `
+            <div class="member-search-item" onclick="selectAddMemberCandidate('${u.id}')">
+                <input type="radio" name="addMemberCandidate" onclick="event.stopPropagation(); selectAddMemberCandidate('${u.id}')">
+                <img src="${u.avatarUrl || 'assets/images/default-avatar.svg'}" alt="Avatar" class="avatar">
+                <div class="member-info">
+                    <span class="member-name">${safeName}</span>
+                    <span class="member-status">${u.isOnline ? '🟢 Online' : '⚫ Offline'}</span>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function selectAddMemberCandidate(userId) {
+    const displayName = addMemberCandidatesById.get(String(userId)) || String(userId);
+    addMemberSelectedUser = { id: String(userId), displayName };
+    const confirmBtn = document.getElementById('confirmAddMember');
+    if (confirmBtn) confirmBtn.disabled = false;
+
+    // update radio state
+    const results = document.getElementById('addMemberSearchResults');
+    if (results) {
+        const radios = results.querySelectorAll('input[type="radio"]');
+        radios.forEach(r => {
+            const item = r.closest('.member-search-item');
+            const onclick = item?.getAttribute('onclick') || '';
+            r.checked = onclick.includes(`'${userId}'`);
+        });
+    }
+}
+
+// expose for inline onclick
+window.selectAddMemberCandidate = selectAddMemberCandidate;
+
+async function confirmAddMember() {
+    if (!currentConversationId || !addMemberSelectedUser?.id) return;
+    try {
+        await window.socketHandler.addMember(currentConversationId, addMemberSelectedUser.id);
+        closeAddMemberModal();
+        // Realtime event sẽ update UI; refresh nhẹ để chắc chắn
+        if (isRightPanelOpen()) {
+            refreshGroupInfoPanel();
+        }
+    } catch (error) {
+        console.error('❌ confirmAddMember error:', error);
+        showNotification(error?.message || 'Không thể thêm thành viên', 'error');
     }
 }
 

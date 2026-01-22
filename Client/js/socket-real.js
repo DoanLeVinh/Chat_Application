@@ -122,6 +122,9 @@ class SocketHandler {
             case 'member_removed':
                 this.onMemberRemoved(normalizedMessage.payload);
                 break;
+            case 'kicked':
+                this.onKicked(normalizedMessage.payload);
+                break;
             case 'user_online':
                 console.log('✅ Received user_online event:', normalizedMessage.payload);
                 this.onUserOnline(normalizedMessage.payload);
@@ -213,6 +216,11 @@ class SocketHandler {
         return response.payload;
     }
 
+    async getMembers(conversationId) {
+        const response = await this.send('get_members', { conversationId });
+        return response.payload;
+    }
+
     async addReaction(conversationId, messageId, emoji) {
         const response = await this.send('add_reaction', { conversationId, messageId, emoji });
         return response.payload;
@@ -240,6 +248,12 @@ class SocketHandler {
     onMemberRemoved(payload) {
         if (window.onMemberRemoved) {
             window.onMemberRemoved(payload);
+        }
+    }
+
+    onKicked(payload) {
+        if (window.onKicked) {
+            window.onKicked(payload);
         }
     }
 

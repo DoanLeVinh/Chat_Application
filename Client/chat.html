@@ -179,6 +179,31 @@
         </div>
     </div>
 
+    <!-- Add Member Modal -->
+    <div class="modal" id="addMemberModal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Thêm thành viên</h3>
+                <button class="btn-close" id="closeAddMemberModal">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Tìm người dùng</label>
+                    <div class="member-search-box">
+                        <input type="text" id="addMemberSearchInput" placeholder="🔍 Nhập tên hoặc email..." autocomplete="off">
+                    </div>
+                    <div class="member-search-results" id="addMemberSearchResults">
+                        <div class="member-search-empty">Nhập tên hoặc email để tìm kiếm</div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="cancelAddMemberModal">Hủy</button>
+                <button class="btn-primary" id="confirmAddMember" disabled>Thêm</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Server down modal (TODO: Người 3) -->
     <div class="modal" id="serverDownModal" style="display: none;">
         <div class="modal-content">
@@ -191,10 +216,10 @@
         </div>
     </div>
     
-    <script src="js/upload.js?v=20260135"></script>
-    <script src="js/socket-real.js?v=20260135"></script>
-    <script src="js/ui.js?v=20260135"></script>
-    <script src="js/app.js?v=20260135"></script>
+    <script src="js/upload.js?v=20260136"></script>
+    <script src="js/socket-real.js?v=20260136"></script>
+    <script src="js/ui.js?v=20260136"></script>
+    <script src="js/app.js?v=20260136"></script>
 
 
 

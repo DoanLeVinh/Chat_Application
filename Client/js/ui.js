@@ -38,9 +38,33 @@ function displayMessage(message) {
     const messagesArea = document.getElementById('messagesArea');
     if (!messagesArea) return;
 
-    const currentUserId = localStorage.getItem('userId') || localStorage.getItem('mockUserId');
-    const isOwn = message.senderId === currentUserId;
-    const senderName = message.senderDisplayName || message.senderName || message.senderId || 'User';
+    const currentUserIdRaw = localStorage.getItem('userId') || localStorage.getItem('mockUserId') || '';
+    const currentUserId = String(currentUserIdRaw).trim();
+
+    const senderIdRaw =
+        message?.senderId ??
+        message?.SenderId ??
+        message?.senderUserId ??
+        message?.SenderUserId ??
+        message?.fromUserId ??
+        message?.FromUserId ??
+        message?.userId ??
+        message?.UserId ??
+        message?.sender?.id ??
+        message?.sender?.Id ??
+        '';
+    const senderId = String(senderIdRaw || '').trim();
+    const isOwn = !!senderId && !!currentUserId && senderId === currentUserId;
+
+    const senderName =
+        message?.senderDisplayName ||
+        message?.SenderDisplayName ||
+        message?.senderName ||
+        message?.SenderName ||
+        message?.sender?.displayName ||
+        message?.sender?.DisplayName ||
+        senderId ||
+        'User';
 
     const clientIdAttr = message.clientMessageId ? ` data-client-id="${message.clientMessageId}"` : '';
     const timeText = message.seq
